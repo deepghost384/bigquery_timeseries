@@ -1,7 +1,7 @@
 from typing import Callable, Optional, List, Union, Dict, Any
 import pandas as pd
 from google.cloud import bigquery
-from gcpts.dt import (
+from bigquery_timeseries.dt import (
     to_quarter_start_dt,
     to_month_start_dt,
     to_quarter_end_dt,

@@ -17,8 +17,8 @@ import bigquery_timeseries as bqts
 import pandas as pd
 import numpy as np
 
-# Initialize GCPTS client
-bqts_client = bqts.GCPTS(
+# Initialize BQTS client
+bqts_client = bqts.BQTS(
     project_id="your_project_id",
     dataset_id="your_dataset_id"
 )
@@ -43,8 +43,8 @@ Here are examples to query data:
 ```python
 import bigquery_timeseries as bqts
 
-# Initialize GCPTS client
-bqts_client = bqts.GCPTS(
+# Initialize BQTS client
+bqts_client = bqts.BQTS(
     project_id="your_project_id",
     dataset_id="your_dataset_id"
 )
