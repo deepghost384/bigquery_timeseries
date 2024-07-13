@@ -51,7 +51,7 @@ bqts_client = bqts.GCPTS(
 
 # Standard query
 result = bqts_client.query_with_confirmation(
-    table_name='example_table4',
+    table_name='example_table',
     fields=['open', 'high', 'low', 'close'],
     start_dt='2022-02-01 00:00:00',
     end_dt='2022-02-05 23:59:59',
@@ -62,7 +62,7 @@ print(result.head(), "\nShape:", result.shape)
 
 # Query to get all fields
 result_all_fields = bqts_client.query_with_confirmation(
-    table_name='example_table4',
+    table_name='example_table',
     fields=['*'],
     start_dt='2022-02-01 00:00:00',
     end_dt='2022-02-05 23:59:59',
@@ -73,7 +73,7 @@ print(result_all_fields.head(), "\nShape:", result_all_fields.shape)
 
 # Resampling query
 resampled_result = bqts_client.resample_query_with_confirmation(
-    table_name='example_table4',
+    table_name='example_table',
     fields=['open', 'high', 'low', 'close'],
     start_dt='2022-01-01 00:00:00',
     end_dt='2022-01-31 23:59:59',
