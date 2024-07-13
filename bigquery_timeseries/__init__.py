@@ -2,6 +2,7 @@ from bigquery_timeseries.sql.basic import Query
 from bigquery_timeseries.sql.resample import ResampleQuery
 from google.cloud import bigquery
 from bigquery_timeseries.uploader import upsert_table
+import pandas as pd
 
 __version__ = "0.1.2"
 
