@@ -13,74 +13,76 @@ pip install git+https://github.com/yourusername/bigquery_timeseries.git -U
 Here is an example to upload OHLC data.
 
 ```python
-import bigquery_timeseries
+import bigquery_timeseries as gcpts
 import pandas as pd
 import numpy as np
-import boto3
 
-# Set up AWS session
-boto3_session = boto3.Session(
-    region_name=REGION_NAME,
-    aws_access_key_id=AWS_ACCESS_KEY_ID,
-    aws_secret_access_key=AWS_SECRET_ACCESS_KEY
+# Initialize GCPTS client
+gcpts_client = gcpts.GCPTS(
+    project_id="your_project_id",
+    dataset_id="your_dataset_id"
 )
 
-# Create AthenaTimeSeries object
-tsdb = bigquery_timeseries.AthenaTimeSeries(
-    boto3_session=boto3_session,
-    glue_db_name=GLUE_DB_NAME,
-    s3_path=S3_PATH
-)
-
-# Prepare example data, your data needs to have 3 columns named symbol, dt, partition_dt
+# Prepare example data
 df = pd.DataFrame(np.random.randn(5000, 4))
 df.columns = ['open', 'high', 'low', 'close']
+df['symbol'] = np.random.choice(['BTCUSDT', 'ETHUSDT', 'BNBUSDT'], 5000)
+df['dt'] = pd.date_range('2022-01-01', periods=5000, freq='15T')
+df['partition_dt'] = df['dt'].dt.floor('D')
 
-# symbol represents a group of data for given data columns
-df['symbol'] = 'BTCUSDT'
-
-# timestamp should be UTC timezone but without tz info
-df['dt'] = pd.date_range('2022-01-01', '2022-05-01', freq='15Min')[:5000]
-
-# partition_dt must be date, data will be updated partition by partition with use of this column.
-# Every time, you have to upload all the data for a given partition_dt, otherwise older data will be gone.
-df['partition_dt'] = df['dt'].dt.date.map(lambda x: x.replace(day=1))
-
-tsdb.upload(table_name='example_table', df=df)
+# Upload data
+gcpts_client.upload(
+    table_name='example_table',
+    df=df,
+    mode='overwrite_partitions'  # Options: 'overwrite_partitions', 'append', 'overwrite'
+)
 ```
 
-Here is an example to query data. You can enjoy time series resampling operations!
+Here are examples to query data:
 
 ```python
-# Query for raw data from 'example_table' for 'BTCUSDT' and 'ETHUSDT' symbols, retrieving 'open', 'high', 'low', 'close' fields
-raw_close_open = tsdb.query(
-    table_name='example_table',
-    fields=['open','high','low','close'],
-    start_dt='2022-02-01 00:00:00', # yyyy-mm-dd HH:MM:SS, inclusive
-    end_dt='2022-02-05 23:59:59', # yyyy-mm-dd HH:MM:SS, inclusive
-    symbols=['BTCUSDT','ETHUSDT'],
+import gcpts
+
+# Initialize GCPTS client
+gcpts_client = gcpts.GCPTS(
+    project_id="your_project_id",
+    dataset_id="your_dataset_id"
 )
 
-# Query for raw data from 'example_table' for 'BTCUSDT' and 'ETHUSDT' symbols, retrieving all fields
-# Only tsdb.query supports fields=['*']
-raw_close_open = tsdb.query(
-    table_name='example_table',
+# Standard query
+result = gcpts_client.query_with_confirmation(
+    table_name='example_table4',
+    fields=['open', 'high', 'low', 'close'],
+    start_dt='2022-02-01 00:00:00',
+    end_dt='2022-02-05 23:59:59',
+    symbols=['BTCUSDT', 'ETHUSDT'],
+    type='STRING'
+)
+print(result.head(), "\nShape:", result.shape)
+
+# Query to get all fields
+result_all_fields = gcpts_client.query_with_confirmation(
+    table_name='example_table4',
     fields=['*'],
-    start_dt='2022-02-01 00:00:00', # yyyy-mm-dd HH:MM:SS, inclusive
-    end_dt='2022-02-05 23:59:59', # yyyy-mm-dd HH:MM:SS, inclusive
-    symbols=['BTCUSDT','ETHUSDT'],
+    start_dt='2022-02-01 00:00:00',
+    end_dt='2022-02-05 23:59:59',
+    symbols=['BTCUSDT', 'ETHUSDT'],
+    type='STRING'
 )
+print(result_all_fields.head(), "\nShape:", result_all_fields.shape)
 
-# Query for resampled data from 'example_table' for 'BTCUSDT' and 'ETHUSDT' symbols, retrieving 'open', 'high', 'low', 'close' fields on a daily interval
-resampled_daily_close = tsdb.resample_query(
-    table_name='example_table',
-    fields=['open','high','low','close'],
-    start_dt='2022-01-01 00:00:00', # yyyy-mm-dd HH:MM:SS, inclusive
-    end_dt='2022-01-31 23:59:59', # yyyy-mm-dd HH:MM:SS, inclusive
-    symbols=['BTCUSDT','ETHUSDT'],
-    interval='day', # month | week | day | hour | {1,2,3,4,6,8,12}hour | minute | {5,15,30}minute
-    ops=['first','max','min','last'], # last | first | min | max | sum
+# Resampling query
+resampled_result = gcpts_client.resample_query_with_confirmation(
+    table_name='example_table4',
+    fields=['open', 'high', 'low', 'close'],
+    start_dt='2022-01-01 00:00:00',
+    end_dt='2022-01-31 23:59:59',
+    symbols=['BTCUSDT', 'ETHUSDT'],
+    interval='day',
+    ops=['first', 'max', 'min', 'last'],
+    type='STRING'
 )
+print(resampled_result.head(), "\nShape:", resampled_result.shape)
 ```
 
 ## Disclaimer
