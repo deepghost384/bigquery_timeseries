@@ -51,7 +51,8 @@ df['partition_dt'] = df['dt'].dt.floor('D')
 bqts_client.upload(
     table_name='example_table',
     df=df,
-    mode='overwrite_partitions'  # Options: 'overwrite_partitions', 'append', 'overwrite'
+    mode='overwrite_partitions',  # Options: 'overwrite_partitions', 'append', 'overwrite'
+    days_per_upload=7  # 7日分のデータを一度にアップロード
 )
 ```
 

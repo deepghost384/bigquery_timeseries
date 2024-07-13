@@ -21,7 +21,8 @@ def upsert_table(
     dtypes: Optional[Dict[str, str]] = None,
     schema: Optional[Dict[str, Any]] = None,
     mode: Literal['append', 'overwrite',
-                  'overwrite_partitions'] = 'overwrite_partitions'
+                  'overwrite_partitions'] = 'overwrite_partitions',
+    days_per_upload: int = 1
 ) -> None:
     # テーブルサイズの計算
     table_size = df.memory_usage(deep=True).sum()
@@ -118,8 +119,22 @@ def upsert_table(
     ) as progress:
         upload_task = progress.add_task("Uploading data", total=total_rows)
 
-        for (date, symbol), group_df in df.groupby([df["partition_dt"].dt.date, "symbol"]):
-            partition_table_id = f"{table_id}${date.strftime('%Y%m%d')}"
+        # 日付でソートし、指定された日数ごとにグループ化
+        df_sorted = df.sort_values('partition_dt')
+        date_groups = df_sorted.groupby(df_sorted['partition_dt'].dt.to_period(
+            'D').astype(str).astype(int) // days_per_upload)
+
+        for _, group_df in date_groups:
+            # 日付範囲を取得
+            start_date = group_df['partition_dt'].min().strftime('%Y%m%d')
+            end_date = group_df['partition_dt'].max().strftime('%Y%m%d')
+
+            if start_date == end_date:
+                partition_suffix = start_date
+            else:
+                partition_suffix = f"{start_date}_{end_date}"
+
+            partition_table_id = f"{table_id}${partition_suffix}"
 
             # CSV データを圧縮
             csv_buffer = io.StringIO()
@@ -164,6 +179,7 @@ def upsert_table(
     console.print(
         "[bold yellow]Note:[/bold yellow] Partition filter requirement is enabled for this table.")
 
+
 class Uploader:
     def __init__(self, project_id: str, dataset_id: str):
         self.project_id = project_id
@@ -177,7 +193,8 @@ class Uploader:
         dtype: Optional[Dict[str, str]] = None,
         schema: Optional[Dict[str, Any]] = None,
         mode: Literal['append', 'overwrite',
-                      'overwrite_partitions'] = 'overwrite_partitions'
+                      'overwrite_partitions'] = 'overwrite_partitions',
+        days_per_upload: int = 1
     ):
         upsert_table(self.project_id, self.dataset_id,
-                     self.bq_client, df, table_name, dtype, schema, mode)
+                     self.bq_client, df, table_name, dtype, schema, mode, days_per_upload)
