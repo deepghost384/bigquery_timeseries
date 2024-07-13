@@ -5,7 +5,6 @@ from typing import Any, Dict, Optional, Literal
 import pandas as pd
 from google.cloud import bigquery
 import pandas_gbq.schema
-from google.api_core import exceptions
 from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn
 from rich.console import Console
 
@@ -47,8 +46,8 @@ def upsert_table(
         for k, v in dtypes.items():
             _dtypes[k] = v
 
-    console.print("Converting data types:")
-    console.print(df.dtypes)
+    # console.print("Converting data types:")
+    # console.print(df.dtypes)
 
     # タイムゾーン情報を削除
     df['dt'] = df['dt'].dt.tz_localize(None)
@@ -121,55 +120,65 @@ def upsert_table(
 
         # 日付でソートし、指定された日数ごとにグループ化
         df_sorted = df.sort_values('partition_dt')
-        date_groups = df_sorted.groupby(df_sorted['partition_dt'].dt.to_period(
-            'D').astype(str).astype(int) // days_per_upload)
+        date_groups = df_sorted.groupby(pd.Grouper(
+            key='partition_dt', freq=f'{days_per_upload}D'))
 
         for _, group_df in date_groups:
             # 日付範囲を取得
-            start_date = group_df['partition_dt'].min().strftime('%Y%m%d')
-            end_date = group_df['partition_dt'].max().strftime('%Y%m%d')
+            start_date = group_df['partition_dt'].min()
+            end_date = group_df['partition_dt'].max()
 
-            if start_date == end_date:
-                partition_suffix = start_date
-            else:
-                partition_suffix = f"{start_date}_{end_date}"
+            # パーティションの整合性チェック
+            if (end_date - start_date).days >= days_per_upload:
+                raise ValueError(
+                    f"Data for date range {start_date} to {end_date} exceeds the specified days_per_upload ({days_per_upload}).")
 
-            partition_table_id = f"{table_id}${partition_suffix}"
+            # 複数のパーティションにまたがる場合、それぞれのパーティションに分割してアップロード
+            for partition_date in pd.date_range(start_date, end_date):
+                partition_data = group_df[group_df['partition_dt'].dt.date == partition_date.date(
+                )]
 
-            # CSV データを圧縮
-            csv_buffer = io.StringIO()
-            group_df.to_csv(csv_buffer, index=False,
-                            header=False, date_format='%Y-%m-%d')
-            csv_buffer.seek(0)
+                if len(partition_data) == 0:
+                    continue
 
-            gzip_buffer = io.BytesIO()
-            with gzip.GzipFile(fileobj=gzip_buffer, mode='wb') as gz:
-                gz.write(csv_buffer.getvalue().encode())
+                partition_date_str = partition_date.strftime('%Y%m%d')
+                partition_table_id = f"{table_id}${partition_date_str}"
 
-            gzip_buffer.seek(0)
+                # CSV データを圧縮
+                csv_buffer = io.StringIO()
+                partition_data.to_csv(
+                    csv_buffer, index=False, header=False, date_format='%Y-%m-%d')
+                csv_buffer.seek(0)
 
-            job = bq_client.load_table_from_file(
-                gzip_buffer,
-                partition_table_id,
-                job_config=job_config,
-            )
+                gzip_buffer = io.BytesIO()
+                with gzip.GzipFile(fileobj=gzip_buffer, mode='wb') as gz:
+                    gz.write(csv_buffer.getvalue().encode())
 
-            while not job.done():
-                time.sleep(1)  # 1秒待機
-                job.reload()
-                if job.state == 'RUNNING':
-                    if job.output_rows is not None:
-                        new_rows = job.output_rows - uploaded_rows
-                        progress.update(upload_task, advance=max(0, new_rows))
-                        uploaded_rows = job.output_rows
+                gzip_buffer.seek(0)
 
-            if job.error_result:
-                raise Exception(f"Job failed: {job.error_result}")
+                job = bq_client.load_table_from_file(
+                    gzip_buffer,
+                    partition_table_id,
+                    job_config=job_config,
+                )
 
-            # 各パーティションのアップロード完了後に進捗を更新
-            new_rows = len(group_df)
-            progress.update(upload_task, advance=new_rows)
-            uploaded_rows += new_rows
+                while not job.done():
+                    time.sleep(1)  # 1秒待機
+                    job.reload()
+                    if job.state == 'RUNNING':
+                        if job.output_rows is not None:
+                            new_rows = job.output_rows - uploaded_rows
+                            progress.update(
+                                upload_task, advance=max(0, new_rows))
+                            uploaded_rows = job.output_rows
+
+                if job.error_result:
+                    raise Exception(f"Job failed: {job.error_result}")
+
+                # 各パーティションのアップロード完了後に進捗を更新
+                new_rows = len(partition_data)
+                progress.update(upload_task, advance=new_rows)
+                uploaded_rows += new_rows
 
     end_time = time.time()  # アップロード終了時間を記録
     upload_duration = end_time - start_time  # アップロードにかかった時間を計算
