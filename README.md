@@ -5,7 +5,7 @@ A custom library for working with BigQuery timeseries data.
 ## Install
 
 ```bash
-pip install git+https://github.com/yourusername/bigquery_timeseries.git -U
+pip install git+https://github.com/deepghost384/bigquery_timeseries.git -U
 ```
 
 ## Usage
