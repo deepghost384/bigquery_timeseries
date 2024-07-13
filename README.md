@@ -1,3 +1,4 @@
+
 # bigquery_timeseries
 
 A custom library for working with BigQuery timeseries data.
@@ -9,6 +10,22 @@ pip install git+https://github.com/deepghost384/bigquery_timeseries.git -U
 ```
 
 ## Usage
+
+### Using in Google Colab environment
+
+When using bigquery_timeseries in a Google Colab environment, perform authentication as follows:
+
+```python
+from google.colab import auth
+from google.cloud import bigquery
+
+# Authenticate in Colab environment
+auth.authenticate_user()
+
+# After authentication, proceed with the standard usage as shown below
+```
+
+### Standard Usage
 
 Here is an example to upload OHLC data.
 
