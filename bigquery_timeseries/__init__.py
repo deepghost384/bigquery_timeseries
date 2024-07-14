@@ -21,9 +21,9 @@ class BQTS(Query, ResampleQuery):
         self.dataset_id = dataset_id
         self.uploader = Uploader(project_id, dataset_id)
 
-    def upload(self, table_name: str, df: pd.DataFrame, mode: str = 'overwrite_partitions', dtypes: dict = None, schema: dict = None, days_per_upload: int = 1):
+    def upload(self, table_name: str, df: pd.DataFrame, mode: str = 'overwrite_partitions', dtypes: dict = None, schema: dict = None, use_gcs: bool = False, gcs_bucket_name: str = None, keep_gcs_file: bool = False, days_per_upload: int = None):
         """
-        Upload data to BigQuery table with specified mode, data types, schema, and days per upload.
+        Upload data to BigQuery table with specified mode, data types, and schema.
 
         Parameters:
         table_name (str): Name of the table to upload data
@@ -31,7 +31,10 @@ class BQTS(Query, ResampleQuery):
         mode (str): Upload mode ('overwrite_partitions' by default)
         dtypes (dict): Dictionary specifying the data types for the columns
         schema (dict): Dictionary specifying the schema for the table
-        days_per_upload (int): Number of days to group data for each upload (1 by default)
+        use_gcs (bool): Whether to use Google Cloud Storage for uploading (False by default)
+        gcs_bucket_name (str): Name of the GCS bucket to use when use_gcs is True
+        keep_gcs_file (bool): Whether to keep the GCS file after upload (False by default)
+        days_per_upload (int): Number of days to group data for each upload (only used when use_gcs is False)
         """
         self.uploader.upload(
             table_name=table_name,
@@ -39,5 +42,8 @@ class BQTS(Query, ResampleQuery):
             dtype=dtypes,
             schema=schema,
             mode=mode,
+            use_gcs=use_gcs,
+            gcs_bucket_name=gcs_bucket_name,
+            keep_gcs_file=keep_gcs_file,
             days_per_upload=days_per_upload
         )
