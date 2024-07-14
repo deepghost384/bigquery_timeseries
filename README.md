@@ -66,7 +66,8 @@ uploader.upload(
     df=df,
     mode='overwrite_partitions',  # Options: 'overwrite_partitions', 'append', 'overwrite'
     use_gcs=False,
-    days_per_upload=7  # Upload 7 days of data at once
+    days_per_upload=7,  # Upload 7 days of data at once
+    partition_type='month'  # Default partitioning by month
 )
 
 # Alternatively, upload data via Google Cloud Storage
@@ -76,9 +77,12 @@ uploader.upload(
     mode='overwrite_partitions',
     use_gcs=True,
     gcs_bucket_name='your-bucket-name',
-    keep_gcs_file=False  # Set to True if you want to keep the temporary file in GCS
+    keep_gcs_file=False,  # Set to True if you want to keep the temporary file in GCS
+    partition_type='month'
 )
 ```
+
+**Note:** If you choose to use day-level partitioning by setting `partition_type` to `'day'`, be aware that this will significantly increase the number of partitions, which may impact query performance and costs.
 
 Here are examples to query data:
 
@@ -126,14 +130,6 @@ resampled_result = bqts_client.resample_query_with_confirmation(
 )
 print(resampled_result.head(), "\nShape:", resampled_result.shape)
 ```
-
-## New Features
-
-- Added support for uploading data via Google Cloud Storage (GCS) for improved performance with large datasets.
-- Implemented progress tracking for data uploads.
-- Enhanced error handling and logging.
-- Added option to keep or delete temporary files in GCS after upload.
-- **Removed support for day-level partitioning and retained month-level partitioning only.**
 
 ## Disclaimer
 

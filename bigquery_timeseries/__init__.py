@@ -12,16 +12,12 @@ class BQTS(Query, ResampleQuery):
         self.dataset_id = dataset_id
         self.uploader = Uploader(project_id, dataset_id)
 
-    def upload(self, table_name: str, df: pd.DataFrame, mode: str = 'overwrite_partitions', dtypes: dict = None, schema: dict = None, use_gcs: bool = False, gcs_bucket_name: str = None, keep_gcs_file: bool = False, days_per_upload: int = None, partition_type: str = 'day'):
+    def upload(self, table_name: str, df: pd.DataFrame, mode: str = 'overwrite_partitions', dtypes: dict = None, schema: dict = None, use_gcs: bool = False, gcs_bucket_name: str = None, keep_gcs_file: bool = False, days_per_upload: int = 1, partition_type: Literal['day', 'month'] = 'month'):
         self.uploader.upload(
             table_name=table_name,
             df=df,
             partition_type=partition_type,
-            dtype=dtypes,
-            schema=schema,
-            mode=mode,
             use_gcs=use_gcs,
             gcs_bucket_name=gcs_bucket_name,
-            keep_gcs_file=keep_gcs_file,
-            days_per_upload=days_per_upload
+            keep_gcs_file=keep_gcs_file
         )

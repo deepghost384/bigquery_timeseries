@@ -27,7 +27,8 @@ def upsert_table(
     schema: Optional[Dict[str, Any]] = None,
     mode: Literal['append', 'overwrite',
                   'overwrite_partitions'] = 'overwrite_partitions',
-    days_per_upload: int = 1
+    days_per_upload: int = 1,
+    partition_type: Literal['day', 'month'] = 'month'
 ) -> None:
     logger.info(
         f"Starting upsert_table for {project_id}.{dataset_id}.{table_name}")
@@ -54,9 +55,15 @@ def upsert_table(
             raise ValueError(error_msg)
 
     logger.debug("Processing dataframe")
-    df['dt'] = df['dt'].dt.tz_localize(None)
+    df['dt'] = pd.to_datetime(df['dt']).dt.tz_localize(None)
     df = df.astype(_dtypes)
     df['dt'] = df['dt'].dt.strftime('%Y-%m-%d %H:%M:%S')
+
+    # Adjust partitioning based on partition_type
+    if partition_type == 'day':
+        df['partition_dt'] = pd.to_datetime(df['dt']).dt.strftime('%Y-%m-%d')
+    else:  # Default to month
+        df['partition_dt'] = pd.to_datetime(df['dt']).dt.strftime('%Y-%m')
 
     logger.debug("Generating BigQuery schema")
     if schema is None:
@@ -76,7 +83,7 @@ def upsert_table(
         logger.info(f"Creating or overwriting table: {table_id}")
         table = bigquery.Table(table_id, schema=bq_schema)
         table.time_partitioning = bigquery.TimePartitioning(
-            type_=bigquery.TimePartitioningType.MONTH,
+            type_=bigquery.TimePartitioningType.DAY if partition_type == 'day' else bigquery.TimePartitioningType.MONTH,
             field="partition_dt",
             require_partition_filter=True
         )
@@ -87,7 +94,7 @@ def upsert_table(
         schema=bq_schema,
         write_disposition=bigquery.WriteDisposition.WRITE_APPEND if mode == 'append' else bigquery.WriteDisposition.WRITE_TRUNCATE,
         time_partitioning=bigquery.TimePartitioning(
-            type_=bigquery.TimePartitioningType.MONTH,
+            type_=bigquery.TimePartitioningType.DAY if partition_type == 'day' else bigquery.TimePartitioningType.MONTH,
             field="partition_dt",
             require_partition_filter=True
         ),
@@ -138,7 +145,7 @@ class Uploader:
 
         return gcs_uri
 
-    def upload(self, table_name: str, df: pd.DataFrame, use_gcs: bool = False, gcs_bucket_name: Optional[str] = None, keep_gcs_file: bool = False):
+    def upload(self, table_name: str, df: pd.DataFrame, use_gcs: bool = False, gcs_bucket_name: Optional[str] = None, keep_gcs_file: bool = False, partition_type: Literal['day', 'month'] = 'month'):
         if use_gcs:
             if not gcs_bucket_name:
                 raise ValueError(
@@ -152,7 +159,7 @@ class Uploader:
                     pandas_gbq.schema.generate_bq_schema(df)),
                 write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
                 time_partitioning=bigquery.TimePartitioning(
-                    type_=bigquery.TimePartitioningType.MONTH,
+                    type_=bigquery.TimePartitioningType.DAY if partition_type == 'day' else bigquery.TimePartitioningType.MONTH,
                     field="partition_dt",
                     require_partition_filter=True
                 ),
@@ -193,5 +200,6 @@ class Uploader:
                 dataset_id=self.dataset_id,
                 bq_client=self.bq_client,
                 df=df,
-                table_name=table_name
+                table_name=table_name,
+                partition_type=partition_type
             )
