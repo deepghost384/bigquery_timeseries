@@ -14,7 +14,6 @@ def to_where(
     end_dt: Optional[str],
     partition_key: str = "partition_dt",
     partition_interval: str = "quarterly",
-    type: str = "TIMESTAMP",
     tz: Optional[str] = None
 ):
     start_dt_offset_fn: Callable
@@ -39,7 +38,7 @@ def to_where(
 
         where += [
             f"{partition_key} >= CAST('{_start_dt:%Y-%m-%d}' AS DATE)",
-            f"dt >= CAST('{start_dt}' AS {type})",
+            f"dt >= CAST('{start_dt}' AS TIMESTAMP)",
         ]
 
     if end_dt is not None:
@@ -50,7 +49,7 @@ def to_where(
 
         where += [
             f"{partition_key} <= CAST('{_end_dt:%Y-%m-%d}' AS DATE)",
-            f"dt <= CAST('{end_dt}' AS {type})",
+            f"dt <= CAST('{end_dt}' AS TIMESTAMP)",
         ]
     return where
 
@@ -70,7 +69,6 @@ class Query:
         end_dt: Optional[str] = None,
         partition_key: str = "partition_dt",
         partition_interval: str = "quarterly",
-        type: str = "TIMESTAMP",
         dry_run: bool = False
     ) -> Union[pd.DataFrame, Dict[str, Any]]:
         where = to_where(
@@ -78,7 +76,6 @@ class Query:
             end_dt=end_dt,
             partition_key=partition_key,
             partition_interval=partition_interval,
-            type=type,
         )
 
         if symbols is not None and len(symbols) > 0:
@@ -128,12 +125,11 @@ class Query:
         start_dt: Optional[str] = None,
         end_dt: Optional[str] = None,
         partition_key: str = "partition_dt",
-        partition_interval: str = "quarterly",
-        type: str = "TIMESTAMP"
+        partition_interval: str = "quarterly"
     ) -> Optional[pd.DataFrame]:
         dry_run_result = self.query(
             table_name, fields, symbols, start_dt, end_dt,
-            partition_key, partition_interval, type, dry_run=True
+            partition_key, partition_interval, dry_run=True
         )
 
         print(
@@ -146,7 +142,7 @@ class Query:
         if user_input.lower() == 'yes':
             return self.query(
                 table_name, fields, symbols, start_dt, end_dt,
-                partition_key, partition_interval, type
+                partition_key, partition_interval
             )
         else:
             print("Query execution cancelled.")

@@ -82,7 +82,36 @@ uploader.upload(
 )
 ```
 
+### Upload Modes
+
+The `upload` method supports three modes of operation, which are based on BigQuery's native write dispositions and enhanced for time series data handling:
+
+1. **'overwrite_partitions'** (default):
+   - This mode is a custom implementation built on top of BigQuery's `WRITE_APPEND` and `WRITE_TRUNCATE`.
+   - It performs a targeted update for specific partition_dt and symbol combinations.
+   - The process involves:
+     1. Deleting existing data for the specific partition_dt and symbol combinations.
+     2. Appending the new data for those combinations.
+   - Data for other partition_dt and symbol combinations remains unchanged.
+   - This mode is optimized for updating specific time periods for specific symbols without affecting other data.
+
+2. **'append'**:
+   - This mode directly utilizes BigQuery's `WRITE_APPEND` disposition.
+   - New data is added to the existing table without modifying or deleting any existing data.
+   - It's useful when you want to add new records without affecting existing ones.
+   - Be cautious of potential data duplication if uploading data for existing partition_dt and symbol combinations.
+
+3. **'overwrite'**:
+   - This mode uses BigQuery's `WRITE_TRUNCATE` disposition.
+   - It completely replaces the entire contents of the target table with the new data.
+   - All existing data in the table will be deleted before the new data is inserted.
+   - Use this mode with caution, as it will result in loss of all previous data in the table.
+
+The implementation leverages BigQuery's native functionalities and extends them to provide more granular control over time series data updates. The 'overwrite_partitions' mode, in particular, is a custom solution designed to efficiently handle updates to specific partitions and symbols in time series data, which is not directly available as a single operation in standard BigQuery write dispositions.
+
 **Note:** If you choose to use day-level partitioning by setting `partition_type` to `'day'`, be aware that this will significantly increase the number of partitions, which may impact query performance and costs.
+
+### Querying Data
 
 Here are examples to query data:
 
@@ -101,8 +130,7 @@ result = bqts_client.query_with_confirmation(
     fields=['open', 'high', 'low', 'close'],
     start_dt='2022-02-01 00:00:00',
     end_dt='2022-02-05 23:59:59',
-    symbols=['BTCUSDT', 'ETHUSDT'],
-    type='STRING'
+    symbols=['BTCUSDT', 'ETHUSDT']
 )
 print(result.head(), "\nShape:", result.shape)
 
@@ -112,8 +140,7 @@ result_all_fields = bqts_client.query_with_confirmation(
     fields=['*'],
     start_dt='2022-02-01 00:00:00',
     end_dt='2022-02-05 23:59:59',
-    symbols=['BTCUSDT', 'ETHUSDT'],
-    type='STRING'
+    symbols=['BTCUSDT', 'ETHUSDT']
 )
 print(result_all_fields.head(), "\nShape:", result_all_fields.shape)
 
@@ -125,8 +152,7 @@ resampled_result = bqts_client.resample_query_with_confirmation(
     end_dt='2022-01-31 23:59:59',
     symbols=['BTCUSDT', 'ETHUSDT'],
     interval='day',
-    ops=['first', 'max', 'min', 'last'],
-    type='STRING'
+    ops=['first', 'max', 'min', 'last']
 )
 print(resampled_result.head(), "\nShape:", resampled_result.shape)
 ```

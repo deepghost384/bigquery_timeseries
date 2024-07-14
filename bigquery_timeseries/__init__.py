@@ -2,6 +2,7 @@ from bigquery_timeseries.sql.basic import Query
 from bigquery_timeseries.sql.resample import ResampleQuery
 from bigquery_timeseries.uploader import Uploader
 import pandas as pd
+from typing import Literal
 
 __version__ = "0.1.2"
 
