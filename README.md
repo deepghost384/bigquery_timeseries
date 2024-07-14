@@ -56,7 +56,9 @@ df = pd.DataFrame(np.random.randn(5000, 4))
 df.columns = ['open', 'high', 'low', 'close']
 df['symbol'] = np.random.choice(['BTCUSDT', 'ETHUSDT', 'BNBUSDT'], 5000)
 df['dt'] = pd.date_range('2022-01-01', periods=5000, freq='15T')
-df['partition_dt'] = df['dt'].dt.floor('D')
+
+# Set partition_dt for month partitioning
+df['partition_dt'] = df['dt'].dt.date.map(lambda x: x.replace(day=1))
 
 # Upload data directly to BigQuery
 uploader.upload(
@@ -75,6 +77,39 @@ uploader.upload(
     use_gcs=True,
     gcs_bucket_name='your-bucket-name',
     keep_gcs_file=False  # Set to True if you want to keep the temporary file in GCS
+)
+```
+
+### Creating Partitioned Tables
+
+To create a partitioned table in BigQuery, you can use the `upsert_table` function from the `Uploader` class. Here is an example to create a table partitioned by month:
+
+```python
+from google.cloud import bigquery
+from bigquery_timeseries import Uploader
+import pandas as pd
+import numpy as np
+
+# Initialize Uploader
+uploader = Uploader(
+    project_id="your_project_id",
+    dataset_id="your_dataset_id"
+)
+
+# Prepare example data
+df = pd.DataFrame(np.random.randn(5000, 4), columns=['open', 'high', 'low', 'close'])
+df['symbol'] = np.random.choice(['BTCUSDT', 'ETHUSDT', 'BNBUSDT'], 5000)
+df['dt'] = pd.date_range('2022-01-01', periods=5000, freq='15T')
+
+# Set partition_dt for month partitioning
+df['partition_dt'] = df['dt'].dt.date.map(lambda x: x.replace(day=1))
+
+# Create partitioned table and upload data
+uploader.upload(
+    table_name='example_table',
+    df=df,
+    mode='overwrite_partitions',
+    use_gcs=False
 )
 ```
 
@@ -124,13 +159,6 @@ resampled_result = bqts_client.resample_query_with_confirmation(
 )
 print(resampled_result.head(), "\nShape:", resampled_result.shape)
 ```
-
-## New Features
-
-- Added support for uploading data via Google Cloud Storage (GCS) for improved performance with large datasets.
-- Implemented progress tracking for data uploads.
-- Enhanced error handling and logging.
-- Added option to keep or delete temporary files in GCS after upload.
 
 ## Disclaimer
 
