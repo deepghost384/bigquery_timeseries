@@ -115,12 +115,12 @@ class ResampleQuery:
         verbose: int = 0,
         offset_repr: Optional[str] = None,
         dry_run: bool = False,
-        type: str = "TIMESTAMP"  # Added type parameter
+        type: str = "TIMESTAMP"
     ) -> Union[pd.DataFrame, Dict[str, Any]]:
         where_clauses = to_where(
             start_dt=start_dt,
             end_dt=end_dt,
-            type=type,  # Pass the type parameter to the to_where function
+            type=type,
             tz=tz
         )
         if symbols is not None and len(symbols) > 0:
@@ -170,7 +170,7 @@ class ResampleQuery:
         verbose: int = 0,
         offset_repr: Optional[str] = None,
         dry_run: bool = False,
-        type: str = "TIMESTAMP"  # Added type parameter
+        type: str = "TIMESTAMP"
     ) -> Union[pd.DataFrame, Dict[str, Any]]:
         dry_run_result = self.resample_query(
             table_name=table_name,
@@ -185,8 +185,8 @@ class ResampleQuery:
             cast=cast,
             verbose=verbose,
             offset_repr=offset_repr,
-            dry_run=True,  # Always perform dry run first
-            type=type  # Pass the type parameter to the resample_query function
+            dry_run=True,
+            type=type
         )
 
         if dry_run_result is not None:
@@ -212,8 +212,8 @@ class ResampleQuery:
             cast=cast,
             verbose=verbose,
             offset_repr=offset_repr,
-            dry_run=False,  # Actual run
-            type=type  # Pass the type parameter to the resample_query function
+            dry_run=False,
+            type=type
         )
 
         return df
