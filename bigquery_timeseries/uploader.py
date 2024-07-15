@@ -45,9 +45,6 @@ def upsert_table(
     table_name: str,
     dtypes: Optional[Dict[str, str]] = None,
     schema: Optional[Dict[str, Any]] = None,
-    mode: Literal['append', 'overwrite',
-                  'overwrite_partitions'] = 'overwrite_partitions',
-    days_per_upload: int = 1,
     partition_type: Literal['day', 'month'] = 'month',
     max_cost: float = 1.0
 ) -> None:
@@ -56,7 +53,6 @@ def upsert_table(
     logger.info(f"Input DataFrame shape: {df.shape}")
     logger.info(f"Input DataFrame columns: {df.columns.tolist()}")
     logger.info(f"Input DataFrame dtypes:\n{df.dtypes}")
-    logger.info(f"Mode: {mode}")
     logger.info(f"Partition type: {partition_type}")
 
     table_size = df.memory_usage(deep=True).sum()
@@ -128,49 +124,49 @@ def upsert_table(
         bq_client.create_table(table)
         logger.info(f"Table {table_id} created successfully")
 
-    if mode == 'overwrite_partitions':
-        logger.info(
-            "Preparing to delete existing data for specified partitions and symbols")
-        unique_partitions = df[['partition_dt', 'symbol']].drop_duplicates()
-        logger.info(
-            f"Unique partition_dt and symbol combinations:\n{unique_partitions}")
+    logger.info(
+        "Preparing to delete existing data for specified partitions and symbols")
+    unique_partitions = df[['partition_dt', 'symbol']].drop_duplicates()
+    logger.info(
+        f"Unique partition_dt and symbol combinations:\n{unique_partitions}")
 
-        delete_conditions = []
-        for _, row in unique_partitions.iterrows():
-            condition = f"(partition_dt = DATE('{row['partition_dt']}') AND symbol = '{row['symbol']}')"
-            delete_conditions.append(condition)
+    delete_conditions = []
+    partition_dates = set()
+    for _, row in unique_partitions.iterrows():
+        condition = f"(partition_dt = DATE('{row['partition_dt']}') AND symbol = '{row['symbol']}')"
+        delete_conditions.append(condition)
+        partition_dates.add(row['partition_dt'])
 
-        if delete_conditions:
-            delete_query = f"""
-            DELETE FROM `{table_id}`
-            WHERE {" OR ".join(delete_conditions)}
-            """
-            logger.info(f"Delete query: {delete_query}")
-            try:
-                check_query_cost(bq_client, delete_query, max_cost)
-                delete_job = bq_client.query(delete_query)
-                delete_job.result()
-                logger.info(
-                    f"Deleted data for specified partition_dt and symbol combinations")
-                logger.info(
-                    f"Rows affected: {delete_job.num_dml_affected_rows}")
-            except ValueError as e:
-                logger.error(f"Cost estimation error: {str(e)}")
-                raise
-            except Exception as e:
-                logger.error(f"Error during delete operation: {str(e)}")
-                raise
-
-    if mode == 'overwrite':
-        write_disposition = bigquery.WriteDisposition.WRITE_TRUNCATE
-    else:  # 'append' or 'overwrite_partitions'
-        write_disposition = bigquery.WriteDisposition.WRITE_APPEND
-
-    logger.info(f"Set write disposition to {write_disposition}")
+    if delete_conditions:
+        partition_filter = " OR ".join(
+            [f"partition_dt = DATE('{date}')" for date in partition_dates])
+        delete_query = f"""
+        DELETE FROM `{table_id}`
+        WHERE partition_dt IN (
+            SELECT DISTINCT partition_dt
+            FROM `{table_id}`
+            WHERE {partition_filter}
+        )
+        AND ({" OR ".join(delete_conditions)})
+        """
+        logger.info(f"Delete query: {delete_query}")
+        try:
+            check_query_cost(bq_client, delete_query, max_cost)
+            delete_job = bq_client.query(delete_query)
+            delete_job.result()
+            logger.info(
+                f"Deleted data for specified partition_dt and symbol combinations")
+            logger.info(f"Rows affected: {delete_job.num_dml_affected_rows}")
+        except ValueError as e:
+            logger.error(f"Cost estimation error: {str(e)}")
+            raise
+        except Exception as e:
+            logger.error(f"Error during delete operation: {str(e)}")
+            raise
 
     job_config = bigquery.LoadJobConfig(
         schema=bq_schema,
-        write_disposition=write_disposition,
+        write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
         time_partitioning=bigquery.TimePartitioning(
             type_=bigquery.TimePartitioningType.DAY if partition_type == 'day' else bigquery.TimePartitioningType.MONTH,
             field="partition_dt",
@@ -242,12 +238,11 @@ class Uploader:
 
         return gcs_uri
 
-    def upload(self, table_name: str, df: pd.DataFrame, mode: Literal['append', 'overwrite', 'overwrite_partitions'] = 'overwrite_partitions', use_gcs: bool = False, gcs_bucket_name: Optional[str] = None, keep_gcs_file: bool = False, partition_type: Literal['day', 'month'] = 'month', max_cost: float = 1.0):
+    def upload(self, table_name: str, df: pd.DataFrame, use_gcs: bool = False, gcs_bucket_name: Optional[str] = None, keep_gcs_file: bool = False, partition_type: Literal['day', 'month'] = 'month', max_cost: float = 1.0):
         logger.info(f"Starting upload process for table: {table_name}")
         logger.info(f"Input DataFrame shape: {df.shape}")
         logger.info(f"Input DataFrame columns: {df.columns.tolist()}")
         logger.info(f"Input DataFrame dtypes:\n{df.dtypes}")
-        logger.info(f"Upload mode: {mode}")
 
         df['dt'] = pd.to_datetime(df['dt']).dt.strftime('%Y-%m-%d %H:%M:%S')
         df['partition_dt'] = pd.to_datetime(
@@ -271,29 +266,6 @@ class Uploader:
 
         logger.info(f"Generated schema: {schema}")
 
-        table_id = f"{self.project_id}.{self.dataset_id}.{table_name}"
-
-        # テーブルの存在確認
-        try:
-            self.bq_client.get_table(table_id)
-            table_exists = True
-            logger.info(f"Table {table_id} already exists")
-        except Exception:
-            table_exists = False
-            logger.info(f"Table {table_id} does not exist")
-
-        if not table_exists:
-            logger.info(f"Creating table: {table_id}")
-            table = bigquery.Table(table_id, schema=schema)
-            table.time_partitioning = bigquery.TimePartitioning(
-                type_=bigquery.TimePartitioningType.DAY if partition_type == 'day' else bigquery.TimePartitioningType.MONTH,
-                field="partition_dt",
-                require_partition_filter=True
-            )
-            table.clustering_fields = ["symbol"]
-            self.bq_client.create_table(table)
-            logger.info(f"Table {table_id} created successfully")
-
         if use_gcs:
             if not gcs_bucket_name:
                 raise ValueError(
@@ -302,38 +274,44 @@ class Uploader:
             logger.info("Using GCS for BigQuery load")
             gcs_uri = self.upload_to_gcs(gcs_bucket_name, df)
 
-            if mode == 'overwrite_partitions':
-                # Delete existing data for the specified partitions and symbols
-                unique_partitions = df[[
-                    'partition_dt', 'symbol']].drop_duplicates()
-                delete_conditions = []
-                for _, row in unique_partitions.iterrows():
-                    condition = f"(partition_dt = DATE('{row['partition_dt']}') AND symbol = '{row['symbol']}')"
-                    delete_conditions.append(condition)
+            # Delete existing data for the specified partitions and symbols
+            unique_partitions = df[[
+                'partition_dt', 'symbol']].drop_duplicates()
+            delete_conditions = []
+            partition_dates = set()
+            for _, row in unique_partitions.iterrows():
+                condition = f"(partition_dt = DATE('{row['partition_dt']}') AND symbol = '{row['symbol']}')"
+                delete_conditions.append(condition)
+                partition_dates.add(row['partition_dt'])
 
-                if delete_conditions:
-                    delete_query = f"""
-                    DELETE FROM `{table_id}`
-                    WHERE {" OR ".join(delete_conditions)}
-                    """
-                    logger.info(f"Delete query: {delete_query}")
-                    try:
-                        check_query_cost(
-                            self.bq_client, delete_query, max_cost)
-                        delete_job = self.bq_client.query(delete_query)
-                        delete_job.result()
-                        logger.info(
-                            f"Deleted data for specified partition_dt and symbol combinations")
-                        logger.info(
-                            f"Rows affected: {delete_job.num_dml_affected_rows}")
-                    except Exception as e:
-                        logger.error(
-                            f"Error during delete operation: {str(e)}")
-                        raise
+            if delete_conditions:
+                partition_filter = " OR ".join(
+                    [f"partition_dt = DATE('{date}')" for date in partition_dates])
+                delete_query = f"""
+                DELETE FROM `{self.project_id}.{self.dataset_id}.{table_name}`
+                WHERE partition_dt IN (
+                    SELECT DISTINCT partition_dt
+                    FROM `{self.project_id}.{self.dataset_id}.{table_name}`
+                    WHERE {partition_filter}
+                )
+                AND ({" OR ".join(delete_conditions)})
+                """
+                logger.info(f"Delete query: {delete_query}")
+                try:
+                    check_query_cost(self.bq_client, delete_query, max_cost)
+                    delete_job = self.bq_client.query(delete_query)
+                    delete_job.result()
+                    logger.info(
+                        f"Deleted data for specified partition_dt and symbol combinations")
+                    logger.info(
+                        f"Rows affected: {delete_job.num_dml_affected_rows}")
+                except Exception as e:
+                    logger.error(f"Error during delete operation: {str(e)}")
+                    raise
 
             job_config = bigquery.LoadJobConfig(
                 schema=schema,
-                write_disposition=bigquery.WriteDisposition.WRITE_APPEND if mode != 'overwrite' else bigquery.WriteDisposition.WRITE_TRUNCATE,
+                write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
                 time_partitioning=bigquery.TimePartitioning(
                     type_=bigquery.TimePartitioningType.DAY if partition_type == 'day' else bigquery.TimePartitioningType.MONTH,
                     field="partition_dt",
@@ -351,7 +329,7 @@ class Uploader:
             logger.info(f"Starting BigQuery load job from GCS: {gcs_uri}")
             job = self.bq_client.load_table_from_uri(
                 gcs_uri,
-                table_id,
+                f"{self.project_id}.{self.dataset_id}.{table_name}",
                 job_config=job_config
             )
 
@@ -362,6 +340,8 @@ class Uploader:
                 logger.error(f"Job failed with error: {e}")
                 for error in job.errors:
                     logger.error(f"Error details: {error}")
+
+
                 error_rows = self.bq_client.list_rows(
                     job.destination, selected_fields=job.schema, max_results=10)
                 logger.error("Sample of error rows:")
@@ -388,7 +368,6 @@ class Uploader:
                     bq_client=self.bq_client,
                     df=df,
                     table_name=table_name,
-                    mode=mode,
                     partition_type=partition_type,
                     max_cost=max_cost
                 )
@@ -402,14 +381,13 @@ class Uploader:
         # 最終確認: アップロードされたデータの確認
         query = f"""
         SELECT COUNT(*) as row_count, COUNT(DISTINCT symbol) as symbol_count
-        FROM `{table_id}`
+        FROM `{self.project_id}.{self.dataset_id}.{table_name}`
         WHERE partition_dt >= DATE('{df['partition_dt'].min()}')
           AND partition_dt <= DATE('{df['partition_dt'].max()}')
         """
         query_job = self.bq_client.query(query)
         results = query_job.result()
         for row in results:
-            logger.info(
-                f"Final check - Total rows: {row.row_count}, Distinct symbols: {row.symbol_count}")
+            logger.info(f"Final check - Total rows: {row.row_count}, Distinct symbols: {row.symbol_count}")
 
         logger.info("Upload process completed")
