@@ -96,9 +96,11 @@ class Query:
             if isinstance(fields, str) and fields == '*':
                 stmt = f"SELECT * FROM {table_id}"
             elif isinstance(fields, str):
-                stmt = f"SELECT {fields}, symbol, dt FROM {table_id}"
+                stmt = f"SELECT {fields} FROM {table_id}"
             elif isinstance(fields, list):
-                stmt = f"SELECT {','.join(fields)}, symbol, dt FROM {table_id}"
+                # Remove 'dt' and 'symbol' if they're already in the fields list
+                fields = [f for f in fields if f not in ['dt', 'symbol']]
+                stmt = f"SELECT {','.join(fields)}, dt, symbol FROM {table_id}"
             else:
                 raise ValueError(
                     "Fields must be a string or a list of strings")
