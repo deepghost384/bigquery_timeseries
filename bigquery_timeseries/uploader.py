@@ -12,6 +12,7 @@ import pandas_gbq
 from rich.console import Console
 from google.api_core.exceptions import BadRequest
 from loguru import logger
+from google.api_core import retry
 
 console = Console()
 
@@ -215,6 +216,17 @@ class Uploader:
         self.bq_client = bigquery.Client(project=project_id)
         self.storage_client = storage.Client(project=project_id)
 
+    @retry.Retry(predicate=retry.if_exception_type(
+        google_exceptions.ServerError,
+        google_exceptions.BadGateway,
+        google_exceptions.ServiceUnavailable,
+        google_exceptions.InternalServerError,
+        google_exceptions.GatewayTimeout
+    ))
+    def upload_to_gcs_with_retry(self, bucket, blob, buffer):
+        blob.upload_from_file(
+            buffer, content_type='application/gzip', timeout=300)
+
     def upload_to_gcs(self, gcs_bucket_name: str, df: pd.DataFrame) -> str:
         bucket = self.storage_client.bucket(gcs_bucket_name)
         blob_name = f"{uuid.uuid4()}.csv.gz"
@@ -232,7 +244,12 @@ class Uploader:
             df.to_csv(f, index=False, quoting=csv.QUOTE_NONNUMERIC)
         buffer.seek(0)
 
-        blob.upload_from_file(buffer, content_type='application/gzip')
+        try:
+            self.upload_to_gcs_with_retry(bucket, blob, buffer)
+        except Exception as e:
+            logger.error(f"Failed to upload to GCS after retries: {e}")
+            raise
+
         gcs_uri = f"gs://{gcs_bucket_name}/{blob_name}"
         logger.info(f"Data uploaded to GCS: {gcs_uri}")
 
@@ -330,7 +347,8 @@ class Uploader:
             job = self.bq_client.load_table_from_uri(
                 gcs_uri,
                 f"{self.project_id}.{self.dataset_id}.{table_name}",
-                job_config=job_config
+                job_config=job_config,
+                timeout=600  # タイムアウトを10分に設定
             )
 
             try:
@@ -340,13 +358,6 @@ class Uploader:
                 logger.error(f"Job failed with error: {e}")
                 for error in job.errors:
                     logger.error(f"Error details: {error}")
-
-
-                error_rows = self.bq_client.list_rows(
-                    job.destination, selected_fields=job.schema, max_results=10)
-                logger.error("Sample of error rows:")
-                for row in error_rows:
-                    logger.error(row)
                 raise
 
             if not keep_gcs_file:
