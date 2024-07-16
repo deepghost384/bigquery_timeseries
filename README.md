@@ -60,56 +60,27 @@ df['dt'] = pd.date_range('2022-01-01', periods=5000, freq='15T')
 # Set partition_dt for month partitioning
 df['partition_dt'] = df['dt'].dt.date.map(lambda x: x.replace(day=1))
 
-# Upload data directly to BigQuery
+# Upload data via Google Cloud Storage
 uploader.upload(
     table_name='example_table',
     df=df,
-    mode='overwrite_partitions',  # Options: 'overwrite_partitions', 'append', 'overwrite'
-    use_gcs=False,
-    days_per_upload=7,  # Upload 7 days of data at once
-    partition_type='month'  # Default partitioning by month
-)
-
-# Alternatively, upload data via Google Cloud Storage
-uploader.upload(
-    table_name='example_table',
-    df=df,
-    mode='overwrite_partitions',
-    use_gcs=True,
     gcs_bucket_name='your-bucket-name',
     keep_gcs_file=False,  # Set to True if you want to keep the temporary file in GCS
-    partition_type='month'
+    max_cost=1.0
 )
 ```
 
-### Upload Modes
+### Upload Mode
 
-The `upload` method supports three modes of operation, which are based on BigQuery's native write dispositions and enhanced for time series data handling:
+The `upload` method uses a custom implementation that combines targeted deletion and append operations:
 
-1. **'overwrite_partitions'** (default):
-   - This mode is a custom implementation built on top of BigQuery's `WRITE_APPEND` and `WRITE_TRUNCATE`.
-   - It performs a targeted update for specific partition_dt and symbol combinations.
-   - The process involves:
-     1. Deleting existing data for the specific partition_dt and symbol combinations.
-     2. Appending the new data for those combinations.
-   - Data for other partition_dt and symbol combinations remains unchanged.
-   - This mode is optimized for updating specific time periods for specific symbols without affecting other data.
+1. It first identifies the unique combinations of `partition_dt` and `symbol` in the new data.
+2. It then constructs and executes a DELETE query to remove existing data for these specific combinations.
+3. Finally, it appends the new data to the table using BigQuery's `WRITE_APPEND` disposition.
 
-2. **'append'**:
-   - This mode directly utilizes BigQuery's `WRITE_APPEND` disposition.
-   - New data is added to the existing table without modifying or deleting any existing data.
-   - It's useful when you want to add new records without affecting existing ones.
-   - Be cautious of potential data duplication if uploading data for existing partition_dt and symbol combinations.
+This approach allows for efficient updating of specific time periods and symbols without affecting other data in the table. It's particularly useful for scenarios where you need to update or replace data for certain date ranges and symbols while keeping the rest of the data intact.
 
-3. **'overwrite'**:
-   - This mode uses BigQuery's `WRITE_TRUNCATE` disposition.
-   - It completely replaces the entire contents of the target table with the new data.
-   - All existing data in the table will be deleted before the new data is inserted.
-   - Use this mode with caution, as it will result in loss of all previous data in the table.
-
-The implementation leverages BigQuery's native functionalities and extends them to provide more granular control over time series data updates. The 'overwrite_partitions' mode, in particular, is a custom solution designed to efficiently handle updates to specific partitions and symbols in time series data, which is not directly available as a single operation in standard BigQuery write dispositions.
-
-**Note:** If you choose to use day-level partitioning by setting `partition_type` to `'day'`, be aware that this will significantly increase the number of partitions, which may impact query performance and costs.
+The method also includes cost estimation checks to ensure that the operations don't exceed a specified cost threshold.
 
 ### Querying Data
 
@@ -127,7 +98,7 @@ bqts_client = bqts.BQTS(
 # Standard query
 result = bqts_client.query_with_confirmation(
     table_name='example_table',
-    fields=['open', 'high', 'low', 'close'],
+    fields=['open', 'high', 'low', 'close', 'symbol'],
     start_dt='2022-02-01 00:00:00',
     end_dt='2022-02-05 23:59:59',
     symbols=['BTCUSDT', 'ETHUSDT']
@@ -156,6 +127,8 @@ resampled_result = bqts_client.resample_query_with_confirmation(
 )
 print(resampled_result.head(), "\nShape:", resampled_result.shape)
 ```
+
+Note: The query results will have 'dt' as the index, and 'symbol' will be included as a regular column in the results. The 'partition_dt' column is not included in the query results.
 
 ## Disclaimer
 

@@ -94,11 +94,16 @@ class Query:
             table_id = f"{self.project_id}.{self.dataset_id}.{table_name}"
 
             if isinstance(fields, str) and fields == '*':
-                stmt = f"SELECT * FROM {table_id}"
+                stmt = f"SELECT * EXCEPT({partition_key}) FROM {table_id}"
             elif isinstance(fields, str):
                 stmt = f"SELECT {fields}, symbol, dt FROM {table_id}"
             elif isinstance(fields, list):
-                stmt = f"SELECT {','.join(fields)}, symbol, dt FROM {table_id}"
+                if 'symbol' not in fields:
+                    fields.append('symbol')
+                if 'dt' not in fields:
+                    fields.append('dt')
+                fields = [f for f in fields if f != partition_key]
+                stmt = f"SELECT {','.join(fields)} FROM {table_id}"
             else:
                 raise ValueError(
                     "Fields must be a string or a list of strings")
@@ -126,8 +131,27 @@ class Query:
             df = pd.read_gbq(stmt, project_id=self.project_id,
                              use_bqstorage_api=True)
 
-            df["dt"] = pd.to_datetime(df["dt"])
-            return df.set_index(["dt", "symbol"]).sort_index()
+            # dt カラムが存在する場合、datetime に変換
+            if 'dt' in df.columns:
+                df["dt"] = pd.to_datetime(df["dt"])
+
+            # dt カラムが存在する場合、dt をインデックスとして設定
+            if 'dt' in df.columns:
+                result = df.set_index("dt").sort_index()
+            else:
+                result = df
+
+            # 重複列を削除
+            if 'symbol_1' in result.columns:
+                result = result.drop(columns=['symbol_1'])
+            if 'dt_1' in result.columns:
+                result = result.drop(columns=['dt_1'])
+
+            # partition_dt カラムが残っている場合は削除
+            if partition_key in result.columns:
+                result = result.drop(columns=[partition_key])
+
+            return result
 
         except Exception as e:
             print(f"An error occurred: {e}")
