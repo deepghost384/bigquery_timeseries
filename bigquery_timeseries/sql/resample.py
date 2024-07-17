@@ -102,6 +102,7 @@ class ResampleQuery:
         self.dataset_id = dataset_id
         self.bq_client = bq_client
 
+
     def resample_query(
         self,
         table_name: str,
@@ -116,11 +117,13 @@ class ResampleQuery:
         cast: Optional[str] = None,
         verbose: int = 0,
         offset_repr: Optional[str] = None,
-        dry_run: bool = False,
-    ) -> Union[pd.DataFrame, Dict[str, Any]]:
+        max_cost: float = 1.0
+    ) -> pd.DataFrame:
         where_clauses = to_where(
             start_dt=start_dt,
             end_dt=end_dt,
+            partition_key="partition_dt",
+            partition_interval="monthly",
             tz=tz
         )
         if symbols is not None and len(symbols) > 0:
@@ -129,88 +132,63 @@ class ResampleQuery:
 
         table_id = f"{self.project_id}.{self.dataset_id}.{table_name}"
 
-        if fields == '*':
-            stmt = f"SELECT * FROM {table_id}"
-        else:
-            stmt = f"SELECT {', '.join(fields)}, symbol, dt FROM {table_id}"
+        # リサンプリングのための SQL を構築
+        agg_functions = {
+            "first": "FIRST_VALUE",
+            "last": "LAST_VALUE",
+            "max": "MAX",
+            "min": "MIN",
+            "sum": "SUM",
+        }
 
-        if len(where_clauses) > 0:
-            stmt += " WHERE " + " AND ".join(where_clauses)
+        select_clauses = ["DATE(dt) AS dt"]  # 'dt' カラムを明示的に選択
+        for field in fields:
+            for op in ops:
+                if op == 'first':
+                    select_clauses.append(
+                        f"FIRST_VALUE({field}) OVER(PARTITION BY symbol, DATE(dt) ORDER BY dt) AS {field}_{op}")
+                elif op == 'last':
+                    select_clauses.append(
+                        f"LAST_VALUE({field}) OVER(PARTITION BY symbol, DATE(dt) ORDER BY dt ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS {field}_{op}")
+                elif op in ['max', 'min', 'sum']:
+                    select_clauses.append(f"{op.upper()}({field}) AS {field}_{op}")
 
-        stmt += f" ORDER BY symbol, dt"
+        stmt = f"""
+        WITH daily_data AS (
+            SELECT 
+                symbol,
+                {', '.join(select_clauses)}
+            FROM {table_id}
+            WHERE {' AND '.join(where_clauses)}
+        )
+        SELECT 
+            symbol,
+            dt,
+            {', '.join([f'{field}_{op}' for field in fields for op in ops])}
+        FROM daily_data
+        GROUP BY symbol, dt
+        ORDER BY symbol, dt
+        """
 
-        if dry_run:
-            dry_run_query_job = self.bq_client.query(
-                stmt, job_config=bigquery.QueryJobConfig(dry_run=True))
-            return {
-                "query": stmt,
-                "total_bytes_processed": dry_run_query_job.total_bytes_processed,
-                "total_bytes_billed": dry_run_query_job.total_bytes_billed,
-            }
+        # コスト見積もり
+        job_config = bigquery.QueryJobConfig(dry_run=True, use_query_cache=False)
+        dry_run_query_job = self.bq_client.query(stmt, job_config=job_config)
+        bytes_processed = dry_run_query_job.total_bytes_processed
+        estimated_cost = bytes_processed * 5 / 1e12  # $5 per TB
+
+        print(
+            f"This query will process approximately {bytes_processed / (1024 ** 3):.2f} GB of data.")
+        print(f"The estimated cost is ${estimated_cost:.4f}.")
+
+        if estimated_cost > max_cost:
+            raise ValueError(
+                f"Estimated cost (${estimated_cost:.4f}) exceeds the maximum allowed cost (${max_cost:.2f}). Query execution cancelled.")
 
         query_job = self.bq_client.query(stmt)
         result = query_job.result()
 
         df = result.to_dataframe()
-
-        return df
-
-    def resample_query_with_confirmation(
-        self,
-        table_name: str,
-        fields: List[str],
-        symbols: Optional[List[str]] = None,
-        start_dt: Optional[str] = None,
-        end_dt: Optional[str] = None,
-        interval: str = "day",
-        tz: Optional[str] = None,
-        ops: List[str] = ["last"],
-        where: Optional[Expr] = None,
-        cast: Optional[str] = None,
-        verbose: int = 0,
-        offset_repr: Optional[str] = None,
-        dry_run: bool = False,
-    ) -> Union[pd.DataFrame, Dict[str, Any]]:
-        dry_run_result = self.resample_query(
-            table_name=table_name,
-            fields=fields,
-            symbols=symbols,
-            start_dt=start_dt,
-            end_dt=end_dt,
-            interval=interval,
-            tz=tz,
-            ops=ops,
-            where=where,
-            cast=cast,
-            verbose=verbose,
-            offset_repr=offset_repr,
-            dry_run=True,
-        )
-
-        if dry_run_result is not None:
-            print(
-                f"This query will process approximately {dry_run_result['total_bytes_processed'] / (1024 ** 3):.2f} GB of data.")
-            print(
-                f"The estimated cost is ${dry_run_result['total_bytes_billed'] / (1024 ** 3 * 5):.4f}.")
-            confirm = input("Do you want to execute the query? (yes/no): ")
-            if confirm.lower() != "yes":
-                return None
-
-        # Execute the actual query
-        df = self.resample_query(
-            table_name=table_name,
-            fields=fields,
-            symbols=symbols,
-            start_dt=start_dt,
-            end_dt=end_dt,
-            interval=interval,
-            tz=tz,
-            ops=ops,
-            where=where,
-            cast=cast,
-            verbose=verbose,
-            offset_repr=offset_repr,
-            dry_run=False,
-        )
+        df['dt'] = pd.to_datetime(df['dt'])
+        df = df.set_index('dt').sort_index()
 
         return df

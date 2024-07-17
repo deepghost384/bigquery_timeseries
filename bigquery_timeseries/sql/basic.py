@@ -71,8 +71,8 @@ class Query:
         end_dt: Optional[str] = None,
         partition_key: str = "partition_dt",
         partition_interval: str = "quarterly",
-        dry_run: bool = False
-    ) -> Union[pd.DataFrame, Dict[str, Any]]:
+        max_cost: float = 1.0  # 新しいパラメータ: 最大許容コスト（デフォルト1ドル）
+    ) -> pd.DataFrame:
         try:
             # Ensure correct datetime format
             if start_dt is not None:
@@ -112,21 +112,21 @@ class Query:
                 condition = " AND ".join(where)
                 stmt += f" WHERE {condition}"
 
-            if dry_run:
-                job_config = bigquery.QueryJobConfig(
-                    dry_run=True, use_query_cache=False)
-                dry_run_query_job = self.bq_client.query(
-                    stmt, job_config=job_config)
-                bytes_processed = dry_run_query_job.total_bytes_processed
-                gb_processed = bytes_processed / (1024 * 1024 * 1024)
-                estimated_cost = (gb_processed / 1024) * 5
+            # コスト見積もり
+            job_config = bigquery.QueryJobConfig(
+                dry_run=True, use_query_cache=False)
+            dry_run_query_job = self.bq_client.query(
+                stmt, job_config=job_config)
+            bytes_processed = dry_run_query_job.total_bytes_processed
+            estimated_cost = bytes_processed * 5 / 1e12  # $5 per TB
 
-                return {
-                    "query": stmt,
-                    "bytes_processed": bytes_processed,
-                    "gb_processed": gb_processed,
-                    "estimated_cost": estimated_cost
-                }
+            print(
+                f"This query will process approximately {bytes_processed / (1024 ** 3):.2f} GB of data.")
+            print(f"The estimated cost is ${estimated_cost:.4f}.")
+
+            if estimated_cost > max_cost:
+                raise ValueError(
+                    f"Estimated cost (${estimated_cost:.4f}) exceeds the maximum allowed cost (${max_cost:.2f}). Query execution cancelled.")
 
             df = pd.read_gbq(stmt, project_id=self.project_id,
                              use_bqstorage_api=True)
@@ -157,34 +157,3 @@ class Query:
             print(f"An error occurred: {e}")
             print(f"Query: {stmt}")
             raise
-
-    def query_with_confirmation(
-        self,
-        table_name: str,
-        fields: Union[str, List[str]],
-        symbols: Optional[List[str]] = None,
-        start_dt: Optional[str] = None,
-        end_dt: Optional[str] = None,
-        partition_key: str = "partition_dt",
-        partition_interval: str = "quarterly"
-    ) -> Optional[pd.DataFrame]:
-        dry_run_result = self.query(
-            table_name, fields, symbols, start_dt, end_dt,
-            partition_key, partition_interval, dry_run=True
-        )
-
-        print(
-            f"This query will process approximately {dry_run_result['gb_processed']:.2f} GB of data.")
-        print(
-            f"The estimated cost is ${dry_run_result['estimated_cost']:.4f}.")
-
-        user_input = input("Do you want to execute the query? (yes/no): ")
-
-        if user_input.lower() == 'yes':
-            return self.query(
-                table_name, fields, symbols, start_dt, end_dt,
-                partition_key, partition_interval
-            )
-        else:
-            print("Query execution cancelled.")
-            return None

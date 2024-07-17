@@ -13,8 +13,8 @@ class BQTS:
         self.dataset_id = dataset_id
         self.bq_client = bigquery.Client(project=project_id)
         self.uploader = Uploader(project_id, dataset_id)
-        self.query = Query(project_id, dataset_id, self.bq_client)
-        self.resample_query = ResampleQuery(
+        self.query_client = Query(project_id, dataset_id, self.bq_client)
+        self.resample_query_client = ResampleQuery(
             project_id, dataset_id, self.bq_client)
 
     def upload(self, table_name: str, df: pd.DataFrame, gcs_bucket_name: str, keep_gcs_file: bool = False, max_cost: float = 1.0):
@@ -26,8 +26,8 @@ class BQTS:
             max_cost=max_cost
         )
 
-    def query_with_confirmation(self, *args, **kwargs):
-        return self.query.query_with_confirmation(*args, **kwargs)
+    def query(self, *args, **kwargs):
+        return self.query_client.query(*args, **kwargs)
 
-    def resample_query_with_confirmation(self, *args, **kwargs):
-        return self.resample_query.resample_query_with_confirmation(*args, **kwargs)
+    def resample_query(self, *args, **kwargs):
+        return self.resample_query_client.resample_query(*args, **kwargs)
