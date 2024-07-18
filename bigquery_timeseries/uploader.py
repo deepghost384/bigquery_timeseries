@@ -25,8 +25,8 @@ def check_query_cost(bq_client: bigquery.Client, query: str, max_cost: float = 1
     bytes_processed = query_job.total_bytes_processed
     estimated_cost = bytes_processed * 5 / 1e12  # $5 per TB
 
-    logger.info(f"Estimated bytes processed: {bytes_processed:,} bytes")
-    logger.info(f"Estimated query cost: ${estimated_cost:.6f}")
+    logger.debug(f"Estimated bytes processed: {bytes_processed:,} bytes")
+    logger.debug(f"Estimated query cost: ${estimated_cost:.6f}")
 
     if estimated_cost > max_cost:
         raise ValueError(
@@ -56,12 +56,12 @@ class Uploader:
         blob_name = f"{uuid.uuid4()}.csv.gz"
         blob = bucket.blob(blob_name)
 
-        logger.info(
+        logger.debug(
             f"Uploading data to GCS bucket {gcs_bucket_name} as {blob_name}")
 
-        logger.info(
+        logger.debug(
             f"Data sample being uploaded to GCS:\n{df.head().to_string()}")
-        logger.info(f"Data types:\n{df.dtypes}")
+        logger.debug(f"Data types:\n{df.dtypes}")
 
         buffer = io.BytesIO()
         with gzip.GzipFile(fileobj=buffer, mode='w') as f:
@@ -75,23 +75,23 @@ class Uploader:
             raise
 
         gcs_uri = f"gs://{gcs_bucket_name}/{blob_name}"
-        logger.info(f"Data uploaded to GCS: {gcs_uri}")
+        logger.debug(f"Data uploaded to GCS: {gcs_uri}")
 
         return gcs_uri
 
     def upload(self, table_name: str, df: pd.DataFrame, gcs_bucket_name: str, keep_gcs_file: bool = False, max_cost: float = 1.0):
-        logger.info(f"Starting upload process for table: {table_name}")
-        logger.info(f"Input DataFrame shape: {df.shape}")
-        logger.info(f"Input DataFrame columns: {df.columns.tolist()}")
-        logger.info(f"Input DataFrame dtypes:\n{df.dtypes}")
+        logger.debug(f"Starting upload process for table: {table_name}")
+        logger.debug(f"Input DataFrame shape: {df.shape}")
+        logger.debug(f"Input DataFrame columns: {df.columns.tolist()}")
+        logger.debug(f"Input DataFrame dtypes:\n{df.dtypes}")
 
         # Ensure dt and partition_dt are in the correct format
         df['dt'] = pd.to_datetime(df['dt']).dt.strftime('%Y-%m-%d %H:%M:%S')
         df['partition_dt'] = pd.to_datetime(
             df['partition_dt']).dt.strftime('%Y-%m-%d')
 
-        logger.info(f"DataFrame after initial processing:\n{df.head()}")
-        logger.info(f"DataFrame dtypes after initial processing:\n{df.dtypes}")
+        logger.debug(f"DataFrame after initial processing:\n{df.head()}")
+        logger.debug(f"DataFrame dtypes after initial processing:\n{df.dtypes}")
 
         schema = pandas_gbq.schema.generate_bq_schema(df)['fields']
         for field in schema:
@@ -100,16 +100,16 @@ class Uploader:
             elif field['name'] == 'dt':
                 field['type'] = 'DATETIME'
 
-        logger.info(f"Generated schema: {schema}")
+        logger.debug(f"Generated schema: {schema}")
 
-        logger.info("Using GCS for BigQuery load")
+        logger.debug("Using GCS for BigQuery load")
         gcs_uri = self.upload_to_gcs(gcs_bucket_name, df)
 
         table_id = f"{self.project_id}.{self.dataset_id}.{table_name}"
         try:
             self.bq_client.get_table(table_id)
         except google_exceptions.NotFound:
-            logger.info(f"Table {table_id} not found. Creating a new table.")
+            logger.debug(f"Table {table_id} not found. Creating a new table.")
             table = bigquery.Table(table_id, schema=schema)
             table.time_partitioning = bigquery.TimePartitioning(
                 type_=bigquery.TimePartitioningType.MONTH,
@@ -118,7 +118,7 @@ class Uploader:
             )
             table.clustering_fields = ["symbol"]
             self.bq_client.create_table(table)
-            logger.info(f"Table {table_id} created successfully")
+            logger.debug(f"Table {table_id} created successfully")
 
         unique_partitions = df[['partition_dt', 'symbol']].drop_duplicates()
         delete_conditions = []
@@ -140,14 +140,14 @@ class Uploader:
             )
             AND ({" OR ".join(delete_conditions)})
             """
-            logger.info(f"Delete query: {delete_query}")
+            logger.debug(f"Delete query: {delete_query}")
             try:
                 check_query_cost(self.bq_client, delete_query, max_cost)
                 delete_job = self.bq_client.query(delete_query)
                 delete_job.result()
-                logger.info(
+                logger.debug(
                     f"Deleted data for specified partition_dt and symbol combinations")
-                logger.info(
+                logger.debug(
                     f"Rows affected: {delete_job.num_dml_affected_rows}")
             except google_exceptions.NotFound:
                 logger.warning(
@@ -176,7 +176,7 @@ class Uploader:
             autodetect=True,
         )
 
-        logger.info(f"Starting BigQuery load job from GCS: {gcs_uri}")
+        logger.debug(f"Starting BigQuery load job from GCS: {gcs_uri}")
         job = self.bq_client.load_table_from_uri(
             gcs_uri,
             f"{self.project_id}.{self.dataset_id}.{table_name}",
@@ -186,7 +186,7 @@ class Uploader:
 
         try:
             job.result()
-            logger.info(f"Job completed. Output rows: {job.output_rows}")
+            logger.debug(f"Job completed. Output rows: {job.output_rows}")
         except google_exceptions.BadRequest as e:
             logger.error(f"Job failed with error: {e}")
             for error in job.errors:
@@ -194,13 +194,13 @@ class Uploader:
             raise
 
         if not keep_gcs_file:
-            logger.info("Deleting temporary GCS file")
+            logger.debug("Deleting temporary GCS file")
             bucket = self.storage_client.bucket(gcs_bucket_name)
             blob = bucket.blob(gcs_uri.split('/')[-1])
             blob.delete()
-            logger.info("Temporary GCS file deleted")
+            logger.debug("Temporary GCS file deleted")
         else:
-            logger.info(f"GCS file kept at: {gcs_uri}")
+            logger.debug(f"GCS file kept at: {gcs_uri}")
 
         query = f"""
         SELECT COUNT(*) as row_count, COUNT(DISTINCT symbol) as symbol_count
@@ -213,11 +213,11 @@ class Uploader:
             query_job = self.bq_client.query(query)
             results = query_job.result()
             for row in results:
-                logger.info(
+                logger.debug(
                     f"Final check - Total rows: {row.row_count}, Distinct symbols: {row.symbol_count}")
         except ValueError as e:
             logger.error(
                 f"Cost estimation error for final check query: {str(e)}")
             logger.warning("Skipping final check due to cost estimation error")
 
-        logger.info("Upload process completed")
+        logger.debug("Upload process completed")
