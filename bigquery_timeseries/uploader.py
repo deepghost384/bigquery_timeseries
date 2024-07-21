@@ -79,6 +79,36 @@ class Uploader:
 
         return gcs_uri
 
+    def get_current_schema(self, table_id):
+        try:
+            table = self.bq_client.get_table(table_id)
+            return table.schema
+        except google_exceptions.NotFound:
+            return None
+
+    def compare_schemas(self, current_schema, new_schema):
+        if current_schema is None:
+            return False, new_schema
+
+        current_fields = {field.name: field for field in current_schema}
+        new_fields = {field['name']: field for field in new_schema}
+
+        if set(current_fields.keys()) != set(new_fields.keys()):
+            return True, new_schema
+
+        for name, new_field in new_fields.items():
+            current_field = current_fields[name]
+            if current_field.field_type != new_field['type']:
+                return True, new_schema
+
+        return False, current_schema
+
+    def update_table_schema(self, table_id, new_schema):
+        table = self.bq_client.get_table(table_id)
+        table.schema = new_schema
+        self.bq_client.update_table(table, ['schema'])
+        logger.debug(f"Updated schema for table {table_id}")
+
     def upload(self, table_name: str, df: pd.DataFrame, gcs_bucket_name: str, keep_gcs_file: bool = False, max_cost: float = 1.0):
         logger.debug(f"Starting upload process for table: {table_name}")
         logger.debug(f"Input DataFrame shape: {df.shape}")
@@ -91,7 +121,8 @@ class Uploader:
             df['partition_dt']).dt.strftime('%Y-%m-%d')
 
         logger.debug(f"DataFrame after initial processing:\n{df.head()}")
-        logger.debug(f"DataFrame dtypes after initial processing:\n{df.dtypes}")
+        logger.debug(
+            f"DataFrame dtypes after initial processing:\n{df.dtypes}")
 
         schema = pandas_gbq.schema.generate_bq_schema(df)['fields']
         for field in schema:
@@ -106,11 +137,14 @@ class Uploader:
         gcs_uri = self.upload_to_gcs(gcs_bucket_name, df)
 
         table_id = f"{self.project_id}.{self.dataset_id}.{table_name}"
-        try:
-            self.bq_client.get_table(table_id)
-        except google_exceptions.NotFound:
+        current_schema = self.get_current_schema(table_id)
+
+        schema_changed, final_schema = self.compare_schemas(
+            current_schema, schema)
+
+        if current_schema is None:
             logger.debug(f"Table {table_id} not found. Creating a new table.")
-            table = bigquery.Table(table_id, schema=schema)
+            table = bigquery.Table(table_id, schema=final_schema)
             table.time_partitioning = bigquery.TimePartitioning(
                 type_=bigquery.TimePartitioningType.MONTH,
                 field="partition_dt",
@@ -119,6 +153,10 @@ class Uploader:
             table.clustering_fields = ["symbol"]
             self.bq_client.create_table(table)
             logger.debug(f"Table {table_id} created successfully")
+        elif schema_changed:
+            logger.debug(
+                f"Schema change detected for table {table_id}. Updating schema.")
+            self.update_table_schema(table_id, final_schema)
 
         unique_partitions = df[['partition_dt', 'symbol']].drop_duplicates()
         delete_conditions = []
@@ -160,7 +198,7 @@ class Uploader:
                 raise
 
         job_config = bigquery.LoadJobConfig(
-            schema=schema,
+            schema=final_schema,
             write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
             time_partitioning=bigquery.TimePartitioning(
                 type_=bigquery.TimePartitioningType.MONTH,
