@@ -176,13 +176,13 @@ class ResampleQuery(Query):
         ORDER BY dt, symbol
         """
 
-        logger.debug(f"Executing query: {query}")
+        # logger.debug(f"Executing query: {query}")
 
         # Estimate query cost
         job_config = bigquery.QueryJobConfig(dry_run=True, use_query_cache=False)
         dry_run_query_job = self.bq_client.query(query, job_config=job_config)
         estimated_cost = dry_run_query_job.total_bytes_processed * 5 / 1e12
-        logger.debug(f"Estimated cost: ${estimated_cost:.6f}")
+        # logger.debug(f"Estimated cost: ${estimated_cost:.6f}")
 
         if estimated_cost > max_cost:
             raise ValueError(
