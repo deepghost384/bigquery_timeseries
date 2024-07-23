@@ -1,44 +1,42 @@
 # uploader.py
 
+from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn
+from tqdm import tqdm
+from google.auth.transport.requests import AuthorizedSession
+from google.resumable_media import requests, common
+from rich.progress import Progress, TaskID
 import io
 import gzip
-import time
 import uuid
 import csv
 import pandas as pd
 from google.cloud import bigquery, storage, exceptions as google_exceptions
 import pandas_gbq
 from rich.console import Console
+from rich.progress import Progress
 from google.api_core.exceptions import BadRequest
 from loguru import logger
 from google.api_core import retry
 
-console = Console()
-
-logger.add("file_{time}.log", rotation="500 MB", level="DEBUG")
-
-
-def check_query_cost(bq_client: bigquery.Client, query: str, max_cost: float = 1.0) -> None:
-    job_config = bigquery.QueryJobConfig(dry_run=True, use_query_cache=False)
-    query_job = bq_client.query(query, job_config=job_config)
-
-    bytes_processed = query_job.total_bytes_processed
-    estimated_cost = bytes_processed * 5 / 1e12  # $5 per TB
-
-    logger.debug(f"Estimated bytes processed: {bytes_processed:,} bytes")
-    logger.debug(f"Estimated query cost: ${estimated_cost:.6f}")
-
-    if estimated_cost > max_cost:
-        raise ValueError(
-            f"Estimated query cost (${estimated_cost:.6f}) exceeds the maximum allowed cost (${max_cost:.2f})")
-
 
 class Uploader:
-    def __init__(self, project_id: str, dataset_id: str):
+    def __init__(self, project_id: str, dataset_id: str, verbose: bool = False):
         self.project_id = project_id
         self.dataset_id = dataset_id
         self.bq_client = bigquery.Client(project=project_id)
         self.storage_client = storage.Client(project=project_id)
+        self.verbose = verbose
+        self.console = Console()
+
+        if self.verbose:
+            logger.add("file_{time}.log", rotation="500 MB", level="DEBUG")
+        else:
+            logger.remove()
+            logger.add(lambda _: None)  # This effectively disables logging
+
+    def log(self, message: str, level: str = "DEBUG"):
+        if self.verbose:
+            getattr(logger, level.lower())(message)
 
     @retry.Retry(predicate=retry.if_exception_type(
         google_exceptions.ServerError,
@@ -51,31 +49,36 @@ class Uploader:
         blob.upload_from_file(
             buffer, content_type='application/gzip', timeout=300)
 
+
     def upload_to_gcs(self, gcs_bucket_name: str, df: pd.DataFrame) -> str:
         bucket = self.storage_client.bucket(gcs_bucket_name)
         blob_name = f"{uuid.uuid4()}.csv.gz"
         blob = bucket.blob(blob_name)
 
-        logger.debug(
-            f"Uploading data to GCS bucket {gcs_bucket_name} as {blob_name}")
-
-        logger.debug(
-            f"Data sample being uploaded to GCS:\n{df.head().to_string()}")
-        logger.debug(f"Data types:\n{df.dtypes}")
+        console = Console()
 
         buffer = io.BytesIO()
+
+        # Compress data
         with gzip.GzipFile(fileobj=buffer, mode='w') as f:
             df.to_csv(f, index=False, quoting=csv.QUOTE_NONNUMERIC)
+
         buffer.seek(0)
 
-        try:
-            self.upload_to_gcs_with_retry(bucket, blob, buffer)
-        except Exception as e:
-            logger.error(f"Failed to upload to GCS after retries: {e}")
-            raise
+        # Upload to GCS with spinner
+        with console.status("[bold green]Uploading to GCS...", spinner="dots"):
+            try:
+                blob.upload_from_file(
+                    buffer,
+                    content_type='application/gzip',
+                    retry=self.upload_to_gcs_with_retry
+                )
+            except Exception as e:
+                console.print(f"[bold red]Failed to upload to GCS: {e}")
+                raise
 
         gcs_uri = f"gs://{gcs_bucket_name}/{blob_name}"
-        logger.debug(f"Data uploaded to GCS: {gcs_uri}")
+        console.print(f"[bold green]Data uploaded to GCS: {gcs_uri}")
 
         return gcs_uri
 
@@ -107,22 +110,21 @@ class Uploader:
         table = self.bq_client.get_table(table_id)
         table.schema = new_schema
         self.bq_client.update_table(table, ['schema'])
-        logger.debug(f"Updated schema for table {table_id}")
+        self.log(f"Updated schema for table {table_id}")
 
     def upload(self, table_name: str, df: pd.DataFrame, gcs_bucket_name: str, keep_gcs_file: bool = False, max_cost: float = 1.0):
-        logger.debug(f"Starting upload process for table: {table_name}")
-        logger.debug(f"Input DataFrame shape: {df.shape}")
-        logger.debug(f"Input DataFrame columns: {df.columns.tolist()}")
-        logger.debug(f"Input DataFrame dtypes:\n{df.dtypes}")
+        self.log(f"Starting upload process for table: {table_name}")
+        self.log(f"Input DataFrame shape: {df.shape}")
+        self.log(f"Input DataFrame columns: {df.columns.tolist()}")
+        self.log(f"Input DataFrame dtypes:\n{df.dtypes}")
 
         # Ensure dt and partition_dt are in the correct format
         df['dt'] = pd.to_datetime(df['dt']).dt.strftime('%Y-%m-%d %H:%M:%S')
         df['partition_dt'] = pd.to_datetime(
             df['partition_dt']).dt.strftime('%Y-%m-%d')
 
-        logger.debug(f"DataFrame after initial processing:\n{df.head()}")
-        logger.debug(
-            f"DataFrame dtypes after initial processing:\n{df.dtypes}")
+        self.log(f"DataFrame after initial processing:\n{df.head()}")
+        self.log(f"DataFrame dtypes after initial processing:\n{df.dtypes}")
 
         schema = pandas_gbq.schema.generate_bq_schema(df)['fields']
         for field in schema:
@@ -131,10 +133,13 @@ class Uploader:
             elif field['name'] == 'dt':
                 field['type'] = 'DATETIME'
 
-        logger.debug(f"Generated schema: {schema}")
+        self.log(f"Generated schema: {schema}")
 
-        logger.debug("Using GCS for BigQuery load")
-        gcs_uri = self.upload_to_gcs(gcs_bucket_name, df)
+        self.log("Using GCS for BigQuery load")
+        with self.console.status("[bold green]Uploading to GCS...") as status:
+            gcs_uri = self.upload_to_gcs(gcs_bucket_name, df)
+            status.update(
+                "[bold green]GCS upload complete. Starting BigQuery load...")
 
         table_id = f"{self.project_id}.{self.dataset_id}.{table_name}"
         current_schema = self.get_current_schema(table_id)
@@ -143,7 +148,7 @@ class Uploader:
             current_schema, schema)
 
         if current_schema is None:
-            logger.debug(f"Table {table_id} not found. Creating a new table.")
+            self.log(f"Table {table_id} not found. Creating a new table.")
             table = bigquery.Table(table_id, schema=final_schema)
             table.time_partitioning = bigquery.TimePartitioning(
                 type_=bigquery.TimePartitioningType.MONTH,
@@ -152,9 +157,9 @@ class Uploader:
             )
             table.clustering_fields = ["symbol"]
             self.bq_client.create_table(table)
-            logger.debug(f"Table {table_id} created successfully")
+            self.log(f"Table {table_id} created successfully")
         elif schema_changed:
-            logger.debug(
+            self.log(
                 f"Schema change detected for table {table_id}. Updating schema.")
             self.update_table_schema(table_id, final_schema)
 
@@ -178,23 +183,23 @@ class Uploader:
             )
             AND ({" OR ".join(delete_conditions)})
             """
-            logger.debug(f"Delete query: {delete_query}")
+            self.log(f"Delete query: {delete_query}")
             try:
-                check_query_cost(self.bq_client, delete_query, max_cost)
+                self.check_query_cost(delete_query, max_cost)
                 delete_job = self.bq_client.query(delete_query)
                 delete_job.result()
-                logger.debug(
+                self.log(
                     f"Deleted data for specified partition_dt and symbol combinations")
-                logger.debug(
-                    f"Rows affected: {delete_job.num_dml_affected_rows}")
+                self.log(f"Rows affected: {delete_job.num_dml_affected_rows}")
             except google_exceptions.NotFound:
-                logger.warning(
-                    f"Table {table_id} not found. Skipping delete operation.")
+                self.log(
+                    f"Table {table_id} not found. Skipping delete operation.", level="WARNING")
             except ValueError as e:
-                logger.error(f"Cost estimation error: {str(e)}")
+                self.log(f"Cost estimation error: {str(e)}", level="ERROR")
                 raise
             except Exception as e:
-                logger.error(f"Error during delete operation: {str(e)}")
+                self.log(
+                    f"Error during delete operation: {str(e)}", level="ERROR")
                 raise
 
         job_config = bigquery.LoadJobConfig(
@@ -214,31 +219,34 @@ class Uploader:
             autodetect=True,
         )
 
-        logger.debug(f"Starting BigQuery load job from GCS: {gcs_uri}")
-        job = self.bq_client.load_table_from_uri(
-            gcs_uri,
-            f"{self.project_id}.{self.dataset_id}.{table_name}",
-            job_config=job_config,
-            timeout=600
-        )
+        self.log(f"Starting BigQuery load job from GCS: {gcs_uri}")
+        with self.console.status("[bold green]Loading data into BigQuery...") as status:
+            job = self.bq_client.load_table_from_uri(
+                gcs_uri,
+                f"{self.project_id}.{self.dataset_id}.{table_name}",
+                job_config=job_config,
+                timeout=600
+            )
 
-        try:
-            job.result()
-            logger.debug(f"Job completed. Output rows: {job.output_rows}")
-        except google_exceptions.BadRequest as e:
-            logger.error(f"Job failed with error: {e}")
-            for error in job.errors:
-                logger.error(f"Error details: {error}")
-            raise
+            try:
+                job.result()
+                status.update("[bold green]BigQuery load complete.")
+                self.log(f"Job completed. Output rows: {job.output_rows}")
+            except google_exceptions.BadRequest as e:
+                status.update("[bold red]BigQuery load failed.")
+                self.log(f"Job failed with error: {e}", level="ERROR")
+                for error in job.errors:
+                    self.log(f"Error details: {error}", level="ERROR")
+                raise
 
         if not keep_gcs_file:
-            logger.debug("Deleting temporary GCS file")
+            self.log("Deleting temporary GCS file")
             bucket = self.storage_client.bucket(gcs_bucket_name)
             blob = bucket.blob(gcs_uri.split('/')[-1])
             blob.delete()
-            logger.debug("Temporary GCS file deleted")
+            self.log("Temporary GCS file deleted")
         else:
-            logger.debug(f"GCS file kept at: {gcs_uri}")
+            self.log(f"GCS file kept at: {gcs_uri}")
 
         query = f"""
         SELECT COUNT(*) as row_count, COUNT(DISTINCT symbol) as symbol_count
@@ -247,15 +255,31 @@ class Uploader:
           AND partition_dt <= DATE('{df['partition_dt'].max()}')
         """
         try:
-            check_query_cost(self.bq_client, query, max_cost)
+            self.check_query_cost(query, max_cost)
             query_job = self.bq_client.query(query)
             results = query_job.result()
             for row in results:
-                logger.debug(
+                self.log(
                     f"Final check - Total rows: {row.row_count}, Distinct symbols: {row.symbol_count}")
         except ValueError as e:
-            logger.error(
-                f"Cost estimation error for final check query: {str(e)}")
-            logger.warning("Skipping final check due to cost estimation error")
+            self.log(
+                f"Cost estimation error for final check query: {str(e)}", level="ERROR")
+            self.log(
+                "Skipping final check due to cost estimation error", level="WARNING")
 
-        logger.debug("Upload process completed")
+        self.log("Upload process completed")
+
+    def check_query_cost(self, query: str, max_cost: float = 1.0) -> None:
+        job_config = bigquery.QueryJobConfig(
+            dry_run=True, use_query_cache=False)
+        query_job = self.bq_client.query(query, job_config=job_config)
+
+        bytes_processed = query_job.total_bytes_processed
+        estimated_cost = bytes_processed * 5 / 1e12  # $5 per TB
+
+        self.log(f"Estimated bytes processed: {bytes_processed:,} bytes")
+        self.log(f"Estimated query cost: ${estimated_cost:.6f}")
+
+        if estimated_cost > max_cost:
+            raise ValueError(
+                f"Estimated query cost (${estimated_cost:.6f}) exceeds the maximum allowed cost (${max_cost:.2f})")
