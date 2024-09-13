@@ -120,6 +120,7 @@ class Uploader:
         self.bq_client.update_table(table, ['schema'])
         self.log(f"Updated schema for table {table_id}")
 
+
     def upload(self, table_name: str, df: pd.DataFrame, gcs_bucket_name: str, keep_gcs_file: bool = False, max_cost: float = 1.0):
         self.log(f"Starting upload process for table: {table_name}")
         self.log(f"Input DataFrame shape: {df.shape}")
@@ -143,21 +144,13 @@ class Uploader:
 
         self.log(f"Generated schema: {schema}")
 
-        self.log("Using GCS for BigQuery load")
-        with self.console.status("[bold green]Uploading to GCS...") as status:
-            gcs_uri = self.upload_to_gcs(gcs_bucket_name, df)
-            status.update(
-                "[bold green]GCS upload complete. Starting BigQuery load...")
-
         table_id = f"{self.project_id}.{self.dataset_id}.{table_name}"
         current_schema = self.get_current_schema(table_id)
 
-        schema_changed, final_schema = self.compare_schemas(
-            current_schema, schema)
+        schema_changed, final_schema = self.compare_schemas(current_schema, schema)
 
         if current_schema is None:
             self.log(f"Table {table_id} not found. Creating a new table.")
-
             table = bigquery.Table(table_id, schema=final_schema)
             table.time_partitioning = bigquery.TimePartitioning(
                 type_=bigquery.TimePartitioningType.MONTH,
@@ -208,9 +201,14 @@ class Uploader:
                 self.log(f"Cost estimation error: {str(e)}", level="ERROR")
                 raise
             except Exception as e:
-                self.log(
-                    f"Error during delete operation: {str(e)}", level="ERROR")
+                self.log(f"Error during delete operation: {str(e)}", level="ERROR")
                 raise
+
+        self.log("Using GCS for BigQuery load")
+        with self.console.status("[bold green]Uploading to GCS...") as status:
+            gcs_uri = self.upload_to_gcs(gcs_bucket_name, df)
+            status.update(
+                "[bold green]GCS upload complete. Starting BigQuery load...")
 
         # Load data from GCS to BigQuery
         job_config = bigquery.LoadJobConfig(
@@ -263,7 +261,7 @@ class Uploader:
         SELECT COUNT(*) as row_count, COUNT(DISTINCT symbol) as symbol_count
         FROM `{self.project_id}.{self.dataset_id}.{table_name}`
         WHERE partition_dt >= DATE('{df['partition_dt'].min()}')
-          AND partition_dt <= DATE('{df['partition_dt'].max()}')
+        AND partition_dt <= DATE('{df['partition_dt'].max()}')
         """
         try:
             self.check_query_cost(query, max_cost)
@@ -275,8 +273,8 @@ class Uploader:
         except ValueError as e:
             self.log(
                 f"Cost estimation error for final check query: {str(e)}", level="ERROR")
-            self.log(
-                "Skipping final check due to cost estimation error", level="WARNING")
+            self.log("Skipping final check due to cost estimation error",
+                    level="WARNING")
 
         self.log("Upload process completed")
 
