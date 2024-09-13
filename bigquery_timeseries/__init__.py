@@ -6,8 +6,6 @@ from .sql.resample import ResampleQuery
 import pandas as pd
 from google.cloud import bigquery
 from tqdm import tqdm
-from rich.progress import Progress
-from rich.console import Console
 
 class BQTS:
     def __init__(self, project_id: str, dataset_id: str, verbose: bool = False):
