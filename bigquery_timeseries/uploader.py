@@ -172,6 +172,7 @@ class Uploader:
                 f"Schema change detected for table {table_id}. Updating schema.")
             self.update_table_schema(table_id, final_schema)
 
+        # Delete existing data for the partitions we're about to upload
         unique_partitions = df[['partition_dt', 'symbol']].drop_duplicates()
         delete_conditions = []
         partition_dates = set()
@@ -211,6 +212,7 @@ class Uploader:
                     f"Error during delete operation: {str(e)}", level="ERROR")
                 raise
 
+        # Load data from GCS to BigQuery
         job_config = bigquery.LoadJobConfig(
             schema=final_schema,
             write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
@@ -229,21 +231,21 @@ class Uploader:
 
         self.log(f"Starting BigQuery load job from GCS: {gcs_uri}")
         with self.console.status("[bold green]Loading data into BigQuery...") as status:
-            job = self.bq_client.load_table_from_uri(
+            load_job = self.bq_client.load_table_from_uri(
                 gcs_uri,
-                f"{self.project_id}.{self.dataset_id}.{table_name}",
-                job_config=job_config,
-                timeout=600
+                table_id,
+                job_config=job_config
             )
 
             try:
-                job.result()
+                load_job.result()  # Wait for the job to complete
                 status.update("[bold green]BigQuery load complete.")
-                self.log(f"Job completed. Output rows: {job.output_rows}")
+                self.log(
+                    f"Load job completed. Loaded {load_job.output_rows} rows.")
             except google_exceptions.BadRequest as e:
                 status.update("[bold red]BigQuery load failed.")
-                self.log(f"Job failed with error: {e}", level="ERROR")
-                for error in job.errors:
+                self.log(f"Load job failed with error: {e}", level="ERROR")
+                for error in load_job.errors:
                     self.log(f"Error details: {error}", level="ERROR")
                 raise
 
@@ -256,6 +258,7 @@ class Uploader:
         else:
             self.log(f"GCS file kept at: {gcs_uri}")
 
+        # Final check query
         query = f"""
         SELECT COUNT(*) as row_count, COUNT(DISTINCT symbol) as symbol_count
         FROM `{self.project_id}.{self.dataset_id}.{table_name}`
