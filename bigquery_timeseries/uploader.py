@@ -1,10 +1,5 @@
-# uploader.py
-
-from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn
-from tqdm import tqdm
 from google.auth.transport.requests import AuthorizedSession
 from google.resumable_media import requests, common
-from rich.progress import Progress, TaskID
 import io
 import gzip
 import uuid
@@ -12,12 +7,9 @@ import csv
 import pandas as pd
 from google.cloud import bigquery, storage, exceptions as google_exceptions
 import pandas_gbq
-from rich.console import Console
-from rich.progress import Progress
 from google.api_core.exceptions import BadRequest
 from loguru import logger
 from google.api_core import retry
-
 
 class Uploader:
     def __init__(self, project_id: str, dataset_id: str, verbose: bool = False):
@@ -26,7 +18,6 @@ class Uploader:
         self.bq_client = bigquery.Client(project=project_id)
         self.storage_client = storage.Client(project=project_id)
         self.verbose = verbose
-        self.console = Console()
 
         if self.verbose:
             logger.add("file_{time}.log", rotation="500 MB", level="DEBUG")
@@ -61,8 +52,6 @@ class Uploader:
 
         logger.debug(f"Created blob with name: {blob_name}")
 
-        console = Console()
-
         buffer = io.BytesIO()
 
         # Compress data
@@ -72,21 +61,18 @@ class Uploader:
 
         buffer.seek(0)
 
-        # Upload to GCS with spinner
-        with console.status("[bold green]Uploading to GCS...", spinner="dots"):
-            try:
-                logger.debug("Attempting to upload to GCS")
-                self.upload_to_gcs_with_retry(bucket, blob, buffer)
-                logger.debug("Upload to GCS completed successfully")
-            except Exception as e:
-                error_message = f"Failed to upload to GCS: {str(e)}"
-                logger.error(error_message)
-                console.print(f"[bold red]{error_message}")
-                raise
+        # Upload to GCS
+        try:
+            logger.debug("Attempting to upload to GCS")
+            self.upload_to_gcs_with_retry(bucket, blob, buffer)
+            logger.debug("Upload to GCS completed successfully")
+        except Exception as e:
+            error_message = f"Failed to upload to GCS: {str(e)}"
+            logger.error(error_message)
+            raise
 
         gcs_uri = f"gs://{gcs_bucket_name}/{blob_name}"
-        logger.debug(f"Data uploaded to GCS: {gcs_uri}")
-        console.print(f"[bold green]Data uploaded to GCS: {gcs_uri}")
+        logger.info(f"Data uploaded to GCS: {gcs_uri}")
 
         return gcs_uri
 
@@ -119,7 +105,6 @@ class Uploader:
         table.schema = new_schema
         self.bq_client.update_table(table, ['schema'])
         self.log(f"Updated schema for table {table_id}")
-
 
     def upload(self, table_name: str, df: pd.DataFrame, gcs_bucket_name: str, keep_gcs_file: bool = False, max_cost: float = 1.0):
         self.log(f"Starting upload process for table: {table_name}")
@@ -205,10 +190,9 @@ class Uploader:
                 raise
 
         self.log("Using GCS for BigQuery load")
-        with self.console.status("[bold green]Uploading to GCS...") as status:
-            gcs_uri = self.upload_to_gcs(gcs_bucket_name, df)
-            status.update(
-                "[bold green]GCS upload complete. Starting BigQuery load...")
+        logger.info("Uploading to GCS...")
+        gcs_uri = self.upload_to_gcs(gcs_bucket_name, df)
+        logger.info("GCS upload complete. Starting BigQuery load...")
 
         # Load data from GCS to BigQuery
         job_config = bigquery.LoadJobConfig(
@@ -228,24 +212,24 @@ class Uploader:
         )
 
         self.log(f"Starting BigQuery load job from GCS: {gcs_uri}")
-        with self.console.status("[bold green]Loading data into BigQuery...") as status:
-            load_job = self.bq_client.load_table_from_uri(
-                gcs_uri,
-                table_id,
-                job_config=job_config
-            )
+        logger.info("Loading data into BigQuery...")
+        load_job = self.bq_client.load_table_from_uri(
+            gcs_uri,
+            table_id,
+            job_config=job_config
+        )
 
-            try:
-                load_job.result()  # Wait for the job to complete
-                status.update("[bold green]BigQuery load complete.")
-                self.log(
-                    f"Load job completed. Loaded {load_job.output_rows} rows.")
-            except google_exceptions.BadRequest as e:
-                status.update("[bold red]BigQuery load failed.")
-                self.log(f"Load job failed with error: {e}", level="ERROR")
-                for error in load_job.errors:
-                    self.log(f"Error details: {error}", level="ERROR")
-                raise
+        try:
+            load_job.result()  # Wait for the job to complete
+            logger.info("BigQuery load complete.")
+            self.log(
+                f"Load job completed. Loaded {load_job.output_rows} rows.")
+        except google_exceptions.BadRequest as e:
+            logger.error("BigQuery load failed.")
+            self.log(f"Load job failed with error: {e}", level="ERROR")
+            for error in load_job.errors:
+                self.log(f"Error details: {error}", level="ERROR")
+            raise
 
         if not keep_gcs_file:
             self.log("Deleting temporary GCS file")
