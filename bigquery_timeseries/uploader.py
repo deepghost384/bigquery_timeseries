@@ -157,13 +157,14 @@ class Uploader:
 
         if current_schema is None:
             self.log(f"Table {table_id} not found. Creating a new table.")
+
             table = bigquery.Table(table_id, schema=final_schema)
             table.time_partitioning = bigquery.TimePartitioning(
                 type_=bigquery.TimePartitioningType.MONTH,
-                field="partition_dt",
-                require_partition_filter=True
+                field="partition_dt"
             )
             table.clustering_fields = ["symbol"]
+            table.require_partition_filter = True
             self.bq_client.create_table(table)
             self.log(f"Table {table_id} created successfully")
         elif schema_changed:
@@ -215,8 +216,7 @@ class Uploader:
             write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
             time_partitioning=bigquery.TimePartitioning(
                 type_=bigquery.TimePartitioningType.MONTH,
-                field="partition_dt",
-                require_partition_filter=True
+                field="partition_dt"
             ),
             clustering_fields=["symbol"],
             source_format=bigquery.SourceFormat.CSV,
