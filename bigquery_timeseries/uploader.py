@@ -46,20 +46,27 @@ class Uploader:
         google_exceptions.GatewayTimeout
     ))
     def upload_to_gcs_with_retry(self, bucket, blob, buffer):
+        logger.debug(f"Attempting to upload blob: {blob.name}")
         blob.upload_from_file(
             buffer, content_type='application/gzip', timeout=300)
-
+        logger.debug(f"Successfully uploaded blob: {blob.name}")
 
     def upload_to_gcs(self, gcs_bucket_name: str, df: pd.DataFrame) -> str:
+        logger.debug(f"Starting upload to GCS bucket: {gcs_bucket_name}")
+        logger.debug(f"DataFrame shape: {df.shape}")
+
         bucket = self.storage_client.bucket(gcs_bucket_name)
         blob_name = f"{uuid.uuid4()}.csv.gz"
         blob = bucket.blob(blob_name)
+
+        logger.debug(f"Created blob with name: {blob_name}")
 
         console = Console()
 
         buffer = io.BytesIO()
 
         # Compress data
+        logger.debug("Compressing data")
         with gzip.GzipFile(fileobj=buffer, mode='w') as f:
             df.to_csv(f, index=False, quoting=csv.QUOTE_NONNUMERIC)
 
@@ -68,16 +75,17 @@ class Uploader:
         # Upload to GCS with spinner
         with console.status("[bold green]Uploading to GCS...", spinner="dots"):
             try:
-                blob.upload_from_file(
-                    buffer,
-                    content_type='application/gzip',
-                    retry=self.upload_to_gcs_with_retry
-                )
+                logger.debug("Attempting to upload to GCS")
+                self.upload_to_gcs_with_retry(bucket, blob, buffer)
+                logger.debug("Upload to GCS completed successfully")
             except Exception as e:
-                console.print(f"[bold red]Failed to upload to GCS: {e}")
+                error_message = f"Failed to upload to GCS: {str(e)}"
+                logger.error(error_message)
+                console.print(f"[bold red]{error_message}")
                 raise
 
         gcs_uri = f"gs://{gcs_bucket_name}/{blob_name}"
+        logger.debug(f"Data uploaded to GCS: {gcs_uri}")
         console.print(f"[bold green]Data uploaded to GCS: {gcs_uri}")
 
         return gcs_uri
