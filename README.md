@@ -96,7 +96,7 @@ bqts_client = bqts.BQTS(
 )
 
 # Standard query
-result = bqts_client.query_with_confirmation(
+result = bqts_client.query(
     table_name='example_table',
     fields=['open', 'high', 'low', 'close', 'symbol'],
     start_dt='2022-02-01 00:00:00',
@@ -106,7 +106,7 @@ result = bqts_client.query_with_confirmation(
 print(result.head(), "\nShape:", result.shape)
 
 # Query to get all fields
-result_all_fields = bqts_client.query_with_confirmation(
+result_all_fields = bqts_client.query(
     table_name='example_table',
     fields=['*'],
     start_dt='2022-02-01 00:00:00',
@@ -116,7 +116,7 @@ result_all_fields = bqts_client.query_with_confirmation(
 print(result_all_fields.head(), "\nShape:", result_all_fields.shape)
 
 # Resampling query
-resampled_result = bqts_client.resample_query_with_confirmation(
+resampled_result = bqts_client.resample_query(
     table_name='example_table',
     fields=['open', 'high', 'low', 'close'],
     start_dt='2022-01-01 00:00:00',
@@ -129,6 +129,55 @@ print(resampled_result.head(), "\nShape:", resampled_result.shape)
 ```
 
 Note: The query results will have 'dt' as the index, and 'symbol' will be included as a regular column in the results. The 'partition_dt' column is not included in the query results.
+
+## Logging
+
+bigquery_timeseries uses loguru for a centralized logging system that allows you to control the log level across the entire library.
+
+### Setting the Log Level
+
+You can set the log level for the entire library using the `BQTS.set_log_level()` method:
+
+```python
+import bigquery_timeseries as bqts
+
+# Set log level to DEBUG
+bqts.BQTS.set_log_level("DEBUG")
+
+# Set log level to INFO
+bqts.BQTS.set_log_level("INFO")
+
+# Set log level to WARNING
+bqts.BQTS.set_log_level("WARNING")
+
+# Set log level to ERROR
+bqts.BQTS.set_log_level("ERROR")
+```
+
+### Log Levels
+
+- DEBUG: Detailed information, typically of interest only when diagnosing problems.
+- INFO: Confirmation that things are working as expected.
+- WARNING: An indication that something unexpected happened, or indicative of some problem in the near future.
+- ERROR: Due to a more serious problem, the software has not been able to perform some function.
+
+### Accessing Logs
+
+By default, logs are output to stderr. You can customize the log output using loguru's powerful configuration options. For example, to output logs to a file:
+
+```python
+from loguru import logger
+import sys
+
+# Add a file sink
+logger.add("bigquery_timeseries.log", rotation="500 MB")
+
+# Your bigquery_timeseries operations here
+```
+
+For more advanced logging configurations, please refer to the [loguru documentation](https://loguru.readthedocs.io/en/stable/index.html).
+
+This logging system provides a consistent way to debug and monitor the library's operations across all its modules.
 
 ## Disclaimer
 
