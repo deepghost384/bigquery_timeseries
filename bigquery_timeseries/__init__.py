@@ -1,5 +1,3 @@
-# __init__.py
-
 from .uploader import Uploader
 from .sql.basic import Query
 from .sql.resample import ResampleQuery
