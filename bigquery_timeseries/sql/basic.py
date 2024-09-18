@@ -75,7 +75,6 @@ class Query:
         partition_key: str = "partition_dt",
         partition_interval: str = "quarterly",
         max_cost: float = 1.0
-        max_cost: float = 1.0
     ) -> pd.DataFrame:
         try:
             if start_dt is not None:
