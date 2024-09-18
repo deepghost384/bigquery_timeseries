@@ -1,19 +1,21 @@
+# bigquery_timeseries/uploader/gcs_uploader.py
+
 import io
 import gzip
 import uuid
 import csv
 import pandas as pd
 from google.cloud import storage
-from google.api_core import retry
+from google.api_core import retry, exceptions
 from .base import BaseUploader
 
 class GCSUploader(BaseUploader):
     @retry.Retry(predicate=retry.if_exception_type(
-        storage.exceptions.ServerError,
-        storage.exceptions.BadGateway,
-        storage.exceptions.ServiceUnavailable,
-        storage.exceptions.InternalServerError,
-        storage.exceptions.GatewayTimeout
+        exceptions.ServerError,
+        exceptions.BadGateway,
+        exceptions.ServiceUnavailable,
+        exceptions.InternalServerError,
+        exceptions.GatewayTimeout
     ))
     def upload_to_gcs_with_retry(self, bucket, blob, buffer):
         self.logger.info(f"Attempting to upload blob: {blob.name}")
