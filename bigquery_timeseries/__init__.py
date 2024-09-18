@@ -1,9 +1,6 @@
-# __init__.py
-
 from .uploader import Uploader
 from .sql.basic import Query
 from .sql.resample import ResampleQuery
-from .logging import set_log_level
 import pandas as pd
 from google.cloud import bigquery
 from tqdm import tqdm
@@ -35,10 +32,3 @@ class BQTS:
 
     def resample_query(self, *args, **kwargs):
         return self.resample_query_client.resample_query(*args, **kwargs)
-<<<<<<< HEAD
-
-    @staticmethod
-    def set_log_level(level):
-        set_log_level(level)
-=======
->>>>>>> parent of 35f2f14 (Refactor uploader module for improved modularity and maintainability)
