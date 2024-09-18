@@ -4,8 +4,8 @@ from .bq_uploader import BQUploader
 from .schema_manager import SchemaManager
 
 class Uploader(BaseUploader, GCSUploader, BQUploader):
-    def __init__(self, project_id: str, dataset_id: str, verbose: bool = False):
-        super().__init__(project_id, dataset_id, verbose)
+    def __init__(self, project_id: str, dataset_id: str):
+        super().__init__(project_id, dataset_id)
         self.schema_manager = SchemaManager(self.bq_client)
 
     def upload(self, table_name: str, df, gcs_bucket_name: str, keep_gcs_file: bool = False, max_cost: float = 1.0):

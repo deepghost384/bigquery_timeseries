@@ -5,10 +5,12 @@ from typing import List, Optional, Any
 import pandas as pd
 from google.cloud import bigquery
 from .basic import to_where
-from loguru import logger
+from ..logger import get_logger
 from .basic import Query
 import re
 from dateutil.relativedelta import relativedelta
+
+logger = get_logger(__name__)
 
 @dataclass(frozen=True)
 class Expr:
@@ -102,7 +104,6 @@ class ResampleQuery(Query):
     def __init__(self, project_id: str, dataset_id: str, bq_client: bigquery.Client):
         super().__init__(project_id, dataset_id, bq_client)
 
-
     def resample_query(
         self,
         table_name: str,
@@ -182,9 +183,11 @@ class ResampleQuery(Query):
         job_config = bigquery.QueryJobConfig(dry_run=True, use_query_cache=False)
         dry_run_query_job = self.bq_client.query(query, job_config=job_config)
         estimated_cost = dry_run_query_job.total_bytes_processed * 5 / 1e12
-        # logger.debug(f"Estimated cost: ${estimated_cost:.6f}")
+        logger.debug(f"Estimated cost: ${estimated_cost:.6f}")
 
         if estimated_cost > max_cost:
+            logger.warning(
+                f"Estimated query cost (${estimated_cost:.6f}) exceeds the maximum allowed cost (${max_cost:.2f})")
             raise ValueError(
                 f"Estimated query cost (${estimated_cost:.6f}) exceeds the maximum allowed cost (${max_cost:.2f})"
             )

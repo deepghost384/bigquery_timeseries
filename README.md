@@ -96,7 +96,7 @@ bqts_client = bqts.BQTS(
 )
 
 # Standard query
-result = bqts_client.query_with_confirmation(
+result = bqts_client.query(
     table_name='example_table',
     fields=['open', 'high', 'low', 'close', 'symbol'],
     start_dt='2022-02-01 00:00:00',
@@ -106,7 +106,7 @@ result = bqts_client.query_with_confirmation(
 print(result.head(), "\nShape:", result.shape)
 
 # Query to get all fields
-result_all_fields = bqts_client.query_with_confirmation(
+result_all_fields = bqts_client.query(
     table_name='example_table',
     fields=['*'],
     start_dt='2022-02-01 00:00:00',
@@ -116,7 +116,7 @@ result_all_fields = bqts_client.query_with_confirmation(
 print(result_all_fields.head(), "\nShape:", result_all_fields.shape)
 
 # Resampling query
-resampled_result = bqts_client.resample_query_with_confirmation(
+resampled_result = bqts_client.resample_query(
     table_name='example_table',
     fields=['open', 'high', 'low', 'close'],
     start_dt='2022-01-01 00:00:00',
@@ -129,6 +129,15 @@ print(resampled_result.head(), "\nShape:", resampled_result.shape)
 ```
 
 Note: The query results will have 'dt' as the index, and 'symbol' will be included as a regular column in the results. The 'partition_dt' column is not included in the query results.
+
+### Logging
+
+The library uses Python's standard logging module. Logging is always enabled, and you can adjust the log level as needed in your application. For example:
+
+```python
+import logging
+logging.getLogger('bigquery_timeseries').setLevel(logging.INFO)
+```
 
 ## Disclaimer
 

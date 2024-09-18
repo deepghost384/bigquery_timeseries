@@ -9,6 +9,9 @@ from bigquery_timeseries.dt import (
     to_quarter_end_dt,
     to_month_end_dt,
 )
+from ..logger import get_logger
+
+logger = get_logger(__name__)
 
 
 def to_where(
@@ -71,7 +74,7 @@ class Query:
         end_dt: Optional[str] = None,
         partition_key: str = "partition_dt",
         partition_interval: str = "quarterly",
-        max_cost: float = 1.0  # 新しいパラメータ: 最大許容コスト（デフォルト1ドル）
+        max_cost: float = 1.0
     ) -> pd.DataFrame:
         try:
             # Ensure correct datetime format
@@ -120,11 +123,13 @@ class Query:
             bytes_processed = dry_run_query_job.total_bytes_processed
             estimated_cost = bytes_processed * 5 / 1e12  # $5 per TB
 
-            print(
+            logger.info(
                 f"This query will process approximately {bytes_processed / (1024 ** 3):.2f} GB of data.")
-            print(f"The estimated cost is ${estimated_cost:.4f}.")
+            logger.info(f"The estimated cost is ${estimated_cost:.4f}.")
 
             if estimated_cost > max_cost:
+                logger.warning(
+                    f"Estimated cost (${estimated_cost:.4f}) exceeds the maximum allowed cost (${max_cost:.2f}). Query execution cancelled.")
                 raise ValueError(
                     f"Estimated cost (${estimated_cost:.4f}) exceeds the maximum allowed cost (${max_cost:.2f}). Query execution cancelled.")
 
@@ -154,6 +159,6 @@ class Query:
             return result
 
         except Exception as e:
-            print(f"An error occurred: {e}")
-            print(f"Query: {stmt}")
+            logger.error(f"An error occurred: {e}")
+            logger.error(f"Query: {stmt}")
             raise

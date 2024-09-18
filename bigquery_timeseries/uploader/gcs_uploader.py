@@ -16,24 +16,24 @@ class GCSUploader(BaseUploader):
         storage.exceptions.GatewayTimeout
     ))
     def upload_to_gcs_with_retry(self, bucket, blob, buffer):
-        self.log(f"Attempting to upload blob: {blob.name}")
+        self.logger.info(f"Attempting to upload blob: {blob.name}")
         blob.upload_from_file(buffer, content_type='application/gzip', timeout=300)
-        self.log(f"Successfully uploaded blob: {blob.name}")
+        self.logger.info(f"Successfully uploaded blob: {blob.name}")
 
     def upload_to_gcs(self, gcs_bucket_name: str, df: pd.DataFrame) -> str:
-        self.log(f"Starting upload to GCS bucket: {gcs_bucket_name}")
-        self.log(f"DataFrame shape: {df.shape}")
+        self.logger.info(f"Starting upload to GCS bucket: {gcs_bucket_name}")
+        self.logger.info(f"DataFrame shape: {df.shape}")
 
         bucket = self.storage_client.bucket(gcs_bucket_name)
         blob_name = f"{uuid.uuid4()}.csv.gz"
         blob = bucket.blob(blob_name)
 
-        self.log(f"Created blob with name: {blob_name}")
+        self.logger.info(f"Created blob with name: {blob_name}")
 
         buffer = io.BytesIO()
 
         # Compress data
-        self.log("Compressing data")
+        self.logger.info("Compressing data")
         with gzip.GzipFile(fileobj=buffer, mode='w') as f:
             df.to_csv(f, index=False, quoting=csv.QUOTE_NONNUMERIC)
 
@@ -41,22 +41,22 @@ class GCSUploader(BaseUploader):
 
         # Upload to GCS
         try:
-            self.log("Attempting to upload to GCS")
+            self.logger.info("Attempting to upload to GCS")
             self.upload_to_gcs_with_retry(bucket, blob, buffer)
-            self.log("Upload to GCS completed successfully")
+            self.logger.info("Upload to GCS completed successfully")
         except Exception as e:
             error_message = f"Failed to upload to GCS: {str(e)}"
-            self.log(error_message, level="ERROR")
+            self.logger.error(error_message)
             raise
 
         gcs_uri = f"gs://{gcs_bucket_name}/{blob_name}"
-        self.log(f"Data uploaded to GCS: {gcs_uri}")
+        self.logger.info(f"Data uploaded to GCS: {gcs_uri}")
 
         return gcs_uri
 
     def delete_gcs_file(self, gcs_bucket_name: str, gcs_uri: str):
-        self.log("Deleting temporary GCS file")
+        self.logger.info("Deleting temporary GCS file")
         bucket = self.storage_client.bucket(gcs_bucket_name)
         blob = bucket.blob(gcs_uri.split('/')[-1])
         blob.delete()
-        self.log("Temporary GCS file deleted")
+        self.logger.info("Temporary GCS file deleted")

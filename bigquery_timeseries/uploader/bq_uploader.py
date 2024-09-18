@@ -23,8 +23,8 @@ class BQUploader(BaseUploader):
             autodetect=True,
         )
 
-        self.log(f"Starting BigQuery load job from GCS: {gcs_uri}")
-        self.log("Loading data into BigQuery...")
+        self.logger.info(f"Starting BigQuery load job from GCS: {gcs_uri}")
+        self.logger.info("Loading data into BigQuery...")
         load_job = self.bq_client.load_table_from_uri(
             gcs_uri,
             table_id,
@@ -33,13 +33,13 @@ class BQUploader(BaseUploader):
 
         try:
             load_job.result()  # Wait for the job to complete
-            self.log("BigQuery load complete.")
-            self.log(f"Load job completed. Loaded {load_job.output_rows} rows.")
+            self.logger.info("BigQuery load complete.")
+            self.logger.info(f"Load job completed. Loaded {load_job.output_rows} rows.")
         except bigquery.BadRequest as e:
-            self.log("BigQuery load failed.", level="ERROR")
-            self.log(f"Load job failed with error: {e}", level="ERROR")
+            self.logger.error("BigQuery load failed.")
+            self.logger.error(f"Load job failed with error: {e}")
             for error in load_job.errors:
-                self.log(f"Error details: {error}", level="ERROR")
+                self.logger.error(f"Error details: {error}")
             raise
 
         self.perform_final_check(table_name, df, max_cost)
@@ -56,7 +56,7 @@ class BQUploader(BaseUploader):
             query_job = self.bq_client.query(query)
             results = query_job.result()
             for row in results:
-                self.log(f"Final check - Total rows: {row.row_count}, Distinct symbols: {row.symbol_count}")
+                self.logger.info(f"Final check - Total rows: {row.row_count}, Distinct symbols: {row.symbol_count}")
         except ValueError as e:
-            self.log(f"Cost estimation error for final check query: {str(e)}", level="ERROR")
-            self.log("Skipping final check due to cost estimation error", level="WARNING")
+            self.logger.error(f"Cost estimation error for final check query: {str(e)}")
+            self.logger.warning("Skipping final check due to cost estimation error")
