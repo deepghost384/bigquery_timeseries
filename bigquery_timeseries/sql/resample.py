@@ -1,5 +1,3 @@
-# resample.py
-
 from dataclasses import dataclass
 from typing import List, Optional, Any
 import pandas as pd
@@ -17,7 +15,6 @@ class Expr:
     def to_repr(self) -> str:
         raise NotImplementedError
 
-
 @dataclass(frozen=True)
 class And(Expr):
     exprs: List[Expr]
@@ -25,14 +22,12 @@ class And(Expr):
     def to_repr(self) -> str:
         return " AND ".join([f"({item.to_repr()})" for item in self.exprs])
 
-
 @dataclass(frozen=True)
 class Or(Expr):
     exprs: List[Expr]
 
     def to_repr(self) -> str:
         return " OR ".join([f"({item.to_repr()})" for item in self.exprs])
-
 
 @dataclass(frozen=True)
 class GT(Expr):
@@ -43,7 +38,6 @@ class GT(Expr):
         assert isinstance(self.value, (int, float))
         return f"{self.field} > {self.value}"
 
-
 @dataclass(frozen=True)
 class GTE(Expr):
     field: str
@@ -52,7 +46,6 @@ class GTE(Expr):
     def to_repr(self) -> str:
         assert isinstance(self.value, (int, float))
         return f"{self.field} >= {self.value}"
-
 
 @dataclass(frozen=True)
 class LT(Expr):
@@ -63,7 +56,6 @@ class LT(Expr):
         assert isinstance(self.value, (int, float))
         return f"{self.field} < {self.value}"
 
-
 @dataclass(frozen=True)
 class LTE(Expr):
     field: str
@@ -73,7 +65,6 @@ class LTE(Expr):
         assert isinstance(self.value, (int, float))
         return f"{self.field} <= {self.value}"
 
-
 @dataclass(frozen=True)
 class Like(Expr):
     field: str
@@ -82,7 +73,6 @@ class Like(Expr):
     def to_repr(self) -> str:
         assert isinstance(self.value, str)
         return f"{self.field} like '{self.value}'"
-
 
 @dataclass(frozen=True)
 class Eq(Expr):
@@ -98,7 +88,6 @@ class Eq(Expr):
         if isinstance(self.value, int):
             return f"{self.field} = {self.value}"
         raise NotImplementedError
-
 
 class ResampleQuery(Query):
     def __init__(self, project_id: str, dataset_id: str, bq_client: bigquery.Client):
@@ -117,20 +106,15 @@ class ResampleQuery(Query):
         partition_interval: str = "quarterly",
         max_cost: float = 1.0,
     ):
-        # Validate and process interval
         interval_sql, group_by_sql = self._process_interval(interval)
 
-        # Validate operations
         valid_ops = ["last", "first", "min", "max", "sum"]
         if len(fields) != len(ops):
-            raise ValueError(
-                "The number of fields must match the number of operations")
+            raise ValueError("The number of fields must match the number of operations")
         for op in ops:
             if op not in valid_ops:
-                raise ValueError(
-                    f"Invalid operation: {op}. Must be one of {valid_ops}")
+                raise ValueError(f"Invalid operation: {op}. Must be one of {valid_ops}")
 
-        # Construct aggregation functions
         agg_functions = []
         for field, op in zip(fields, ops):
             if op == "last":
@@ -146,7 +130,6 @@ class ResampleQuery(Query):
 
         agg_functions_str = ", ".join(agg_functions)
 
-        # Construct WHERE clause
         where_conditions = to_where(
             start_dt=start_dt,
             end_dt=end_dt,
@@ -158,7 +141,6 @@ class ResampleQuery(Query):
             where_conditions.append(f"symbol IN ({symbols_str})")
         where_clause = " AND ".join(where_conditions)
 
-        # Construct the query
         query = f"""
         WITH resampled_data AS (
             SELECT
@@ -177,9 +159,8 @@ class ResampleQuery(Query):
         ORDER BY dt, symbol
         """
 
-        # logger.debug(f"Executing query: {query}")
+        self.logger.debug(f"Executing query: {query}")
 
-        # Estimate query cost
         job_config = bigquery.QueryJobConfig(dry_run=True, use_query_cache=False)
         dry_run_query_job = self.bq_client.query(query, job_config=job_config)
         estimated_cost = dry_run_query_job.total_bytes_processed * 5 / 1e12

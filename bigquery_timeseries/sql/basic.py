@@ -1,5 +1,3 @@
-# basic.py
-
 from typing import Callable, Optional, List, Union, Dict, Any
 import pandas as pd
 from google.cloud import bigquery
@@ -13,6 +11,7 @@ from ..logger import get_logger
 
 logger = get_logger(__name__)
 
+logger = get_logger(__name__)
 
 def to_where(
     start_dt: Optional[str],
@@ -64,6 +63,7 @@ class Query:
         self.project_id = project_id
         self.dataset_id = dataset_id
         self.bq_client = bq_client
+        self.logger = get_logger(f"{__name__}.Query")
 
     def query(
         self,
@@ -75,9 +75,9 @@ class Query:
         partition_key: str = "partition_dt",
         partition_interval: str = "quarterly",
         max_cost: float = 1.0
+        max_cost: float = 1.0
     ) -> pd.DataFrame:
         try:
-            # Ensure correct datetime format
             if start_dt is not None:
                 start_dt = pd.Timestamp(start_dt).strftime('%Y-%m-%d %H:%M:%S')
             if end_dt is not None:
@@ -108,18 +108,14 @@ class Query:
                 fields = [f for f in fields if f != partition_key]
                 stmt = f"SELECT {','.join(fields)} FROM {table_id}"
             else:
-                raise ValueError(
-                    "Fields must be a string or a list of strings")
+                raise ValueError("Fields must be a string or a list of strings")
 
             if where:
                 condition = " AND ".join(where)
                 stmt += f" WHERE {condition}"
 
-            # コスト見積もり
-            job_config = bigquery.QueryJobConfig(
-                dry_run=True, use_query_cache=False)
-            dry_run_query_job = self.bq_client.query(
-                stmt, job_config=job_config)
+            job_config = bigquery.QueryJobConfig(dry_run=True, use_query_cache=False)
+            dry_run_query_job = self.bq_client.query(stmt, job_config=job_config)
             bytes_processed = dry_run_query_job.total_bytes_processed
             estimated_cost = bytes_processed * 5 / 1e12  # $5 per TB
 
@@ -133,26 +129,21 @@ class Query:
                 raise ValueError(
                     f"Estimated cost (${estimated_cost:.4f}) exceeds the maximum allowed cost (${max_cost:.2f}). Query execution cancelled.")
 
-            df = pd.read_gbq(stmt, project_id=self.project_id,
-                             use_bqstorage_api=True)
+            df = pd.read_gbq(stmt, project_id=self.project_id, use_bqstorage_api=True)
 
-            # dt カラムが存在する場合、datetime に変換
             if 'dt' in df.columns:
                 df["dt"] = pd.to_datetime(df["dt"])
 
-            # dt カラムが存在する場合、dt をインデックスとして設定
             if 'dt' in df.columns:
                 result = df.set_index("dt").sort_index()
             else:
                 result = df
 
-            # 重複列を削除
             if 'symbol_1' in result.columns:
                 result = result.drop(columns=['symbol_1'])
             if 'dt_1' in result.columns:
                 result = result.drop(columns=['dt_1'])
 
-            # partition_dt カラムが残っている場合は削除
             if partition_key in result.columns:
                 result = result.drop(columns=[partition_key])
 
