@@ -1,7 +1,9 @@
+# bigquery_timeseries/uploader/schema_manager.py
+
+from typing import List, Optional, Tuple
 import pandas as pd
 from google.cloud import bigquery
 import pandas_gbq
-from typing import List, Optional
 
 class SchemaManager:
     def __init__(self, bq_client: bigquery.Client):
