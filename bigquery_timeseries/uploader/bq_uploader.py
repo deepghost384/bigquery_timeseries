@@ -2,6 +2,7 @@ from .base import BaseUploader
 from .schema_manager import SchemaManager
 from google.cloud import bigquery
 import pandas as pd
+from .utils import check_query_cost
 
 class BQUploader(BaseUploader):
     def __init__(self, project_id: str, dataset_id: str, schema_manager: SchemaManager):
