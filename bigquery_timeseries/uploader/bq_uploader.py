@@ -1,9 +1,13 @@
-import pandas as pd
-from google.cloud import bigquery
 from .base import BaseUploader
-from .utils import check_query_cost
+from .schema_manager import SchemaManager
+from google.cloud import bigquery
+import pandas as pd
 
 class BQUploader(BaseUploader):
+    def __init__(self, project_id: str, dataset_id: str, schema_manager: SchemaManager):
+        super().__init__(project_id, dataset_id)
+        self.schema_manager = schema_manager
+
     def load_to_bq(self, table_name: str, gcs_uri: str, df: pd.DataFrame, max_cost: float):
         table_id = f"{self.project_id}.{self.dataset_id}.{table_name}"
         
