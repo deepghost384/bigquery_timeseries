@@ -1,6 +1,7 @@
 import pandas as pd
 from google.cloud import bigquery
 import pandas_gbq
+from typing import List
 
 class SchemaManager:
     def __init__(self, bq_client: bigquery.Client):
