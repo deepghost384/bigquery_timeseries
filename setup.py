@@ -18,6 +18,7 @@ setup(
         'google-cloud-bigquery>=3.4.1',
         'db-dtypes>=1.0.5',
         'pandas-gbq>=0.19.1',
+        'loguru>=0.7.2',
     ],
     extras_require={
         'dev': [
