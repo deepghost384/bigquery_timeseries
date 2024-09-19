@@ -1,28 +1,28 @@
-# bigquery_timeseries
+# 🚀 bigquery_timeseries
 
-A custom library for working with BigQuery timeseries data.
+A powerful custom library for seamlessly working with BigQuery timeseries data.
 
-## Install
+## 📦 Install
 
 ```bash
 pip install git+https://github.com/deepghost384/bigquery_timeseries.git -U
 ```
 
-## Authentication
+## 🔐 Authentication
 
-### Using gcloud command-line tool
+### 🖥️ Using gcloud command-line tool
 
-If you're using the library on your local machine or in an environment where you can use the gcloud command-line tool, you can authenticate as follows:
+For local machine or environments with gcloud CLI access:
 
 ```bash
 gcloud auth application-default login
 ```
 
-This command will open a web browser and prompt you to log in with your Google account. After successful authentication, you can use the bigquery_timeseries library without additional authentication steps in your Python code.
+This command opens a web browser for Google account login. After successful authentication, you can use the bigquery_timeseries library without additional steps in your Python code.
 
-### Using in Google Colab environment
+### 🧪 Using in Google Colab environment
 
-When using bigquery_timeseries in a Google Colab environment, perform authentication as follows:
+For Google Colab, authenticate as follows:
 
 ```python
 from google.colab import auth
@@ -31,14 +31,14 @@ from google.cloud import bigquery
 # Authenticate in Colab environment
 auth.authenticate_user()
 
-# After authentication, proceed with the standard usage as shown below
+# Proceed with standard usage after authentication
 ```
 
-## Usage
+## 🚀 Usage
 
-### Standard Usage
+### 📊 Uploading Data
 
-Here is an example to upload OHLC data:
+Here's an example to upload OHLC data:
 
 ```python
 import bigquery_timeseries as bqts
@@ -65,24 +65,24 @@ uploader.upload(
     table_name='example_table',
     df=df,
     gcs_bucket_name='your-bucket-name',
-    keep_gcs_file=False,  # Set to True if you want to keep the temporary file in GCS
+    keep_gcs_file=False,  # Set to True to keep the temporary file in GCS
     max_cost=1.0
 )
 ```
 
-### Upload Mode
+### 🔄 Upload Mode
 
-The `upload` method uses a custom implementation that combines targeted deletion and append operations:
+The `upload` method uses a smart implementation combining targeted deletion and append operations:
 
-1. It first identifies the unique combinations of `partition_dt` and `symbol` in the new data.
-2. It then constructs and executes a DELETE query to remove existing data for these specific combinations.
-3. Finally, it appends the new data to the table using BigQuery's `WRITE_APPEND` disposition.
+1. Identifies unique combinations of `partition_dt` and `symbol` in the new data.
+2. Constructs and executes a DELETE query to remove existing data for these specific combinations.
+3. Appends the new data to the table using BigQuery's `WRITE_APPEND` disposition.
 
 This approach allows for efficient updating of specific time periods and symbols without affecting other data in the table. It's particularly useful for scenarios where you need to update or replace data for certain date ranges and symbols while keeping the rest of the data intact.
 
 The method also includes cost estimation checks to ensure that the operations don't exceed a specified cost threshold.
 
-### Querying Data
+### 🔍 Querying Data
 
 Here are examples to query data:
 
@@ -96,7 +96,7 @@ bqts_client = bqts.BQTS(
 )
 
 # Standard query
-result = bqts_client.query_with_confirmation(
+result = bqts_client.query(
     table_name='example_table',
     fields=['open', 'high', 'low', 'close', 'symbol'],
     start_dt='2022-02-01 00:00:00',
@@ -106,7 +106,7 @@ result = bqts_client.query_with_confirmation(
 print(result.head(), "\nShape:", result.shape)
 
 # Query to get all fields
-result_all_fields = bqts_client.query_with_confirmation(
+result_all_fields = bqts_client.query(
     table_name='example_table',
     fields=['*'],
     start_dt='2022-02-01 00:00:00',
@@ -116,7 +116,7 @@ result_all_fields = bqts_client.query_with_confirmation(
 print(result_all_fields.head(), "\nShape:", result_all_fields.shape)
 
 # Resampling query
-resampled_result = bqts_client.resample_query_with_confirmation(
+resampled_result = bqts_client.resample_query(
     table_name='example_table',
     fields=['open', 'high', 'low', 'close'],
     start_dt='2022-01-01 00:00:00',
@@ -128,8 +128,20 @@ resampled_result = bqts_client.resample_query_with_confirmation(
 print(resampled_result.head(), "\nShape:", resampled_result.shape)
 ```
 
-Note: The query results will have 'dt' as the index, and 'symbol' will be included as a regular column in the results. The 'partition_dt' column is not included in the query results.
+Note: Query results will have 'dt' as the index, and 'symbol' will be included as a regular column. The 'partition_dt' column is not included in the query results.
 
-## Disclaimer
+## 📝 Logging
+
+The library uses Loguru for logging. By default, logs are written to a file with a 500 MB rotation. You can enable verbose logging by setting `verbose=True` when initializing the `Uploader` or `BQTS` classes.
+
+## ⚠️ Disclaimer
 
 This library allows for potential SQL injection. Please use it for your own purposes only and do not allow arbitrary requests to this library.
+
+## 🎉 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## 📄 License
+
+This project is licensed under the MIT License.
