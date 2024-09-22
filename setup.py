@@ -6,7 +6,7 @@ setup(
     author='Your Name',
     author_email='your.email@example.com',
     description='A custom library for working with BigQuery timeseries data.',
-    long_description=open('README.md').read(),
+    long_description=open('README.md', encoding='utf-8').read(),  # ここを変更
     long_description_content_type='text/markdown',
     url='https://github.com/yourusername/bigquery_timeseries',
     packages=find_packages(),
@@ -18,7 +18,6 @@ setup(
         'google-cloud-bigquery>=3.4.1',
         'db-dtypes>=1.0.5',
         'pandas-gbq>=0.19.1',
-        'loguru>=0.7.2',
     ],
     extras_require={
         'dev': [
