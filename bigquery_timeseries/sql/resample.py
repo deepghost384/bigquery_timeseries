@@ -175,13 +175,10 @@ class ResampleQuery(Query):
         ORDER BY dt, symbol
         """
 
-        # logger.debug(f"Executing query: {query}")
-
         # Estimate query cost
         job_config = bigquery.QueryJobConfig(dry_run=True, use_query_cache=False)
         dry_run_query_job = self.bq_client.query(query, job_config=job_config)
         estimated_cost = dry_run_query_job.total_bytes_processed * 5 / 1e12
-        # logger.debug(f"Estimated cost: ${estimated_cost:.6f}")
 
         if estimated_cost > max_cost:
             raise ValueError(
@@ -227,8 +224,8 @@ class ResampleQuery(Query):
                 f"DATE_TRUNC(dt, DAY) - MOD(DATE_DIFF(dt, DATE '1970-01-01', DAY), {number}) * INTERVAL 1 DAY"
         elif unit == 'week':
             return (
-                "DATE_TRUNC(dt, WEEK(MONDAY))",
-                "DATE_TRUNC(dt, WEEK(MONDAY))"
+                "DATE_TRUNC(DATE_SUB(dt, INTERVAL EXTRACT(DAYOFWEEK FROM dt) - 1 DAY), DAY)",
+                "DATE_TRUNC(DATE_SUB(dt, INTERVAL EXTRACT(DAYOFWEEK FROM dt) - 1 DAY), DAY)"
             )
         elif unit == 'month':
             return f"DATE_TRUNC(dt, MONTH) - MOD(DATE_DIFF(dt, DATE '1970-01-01', MONTH), {number}) * INTERVAL 1 MONTH", \
