@@ -102,7 +102,6 @@ class ResampleQuery(Query):
     def __init__(self, project_id: str, dataset_id: str, bq_client: bigquery.Client):
         super().__init__(project_id, dataset_id, bq_client)
 
-
     def resample_query(
         self,
         table_name: str,
@@ -200,7 +199,6 @@ class ResampleQuery(Query):
 
         return df
 
-
     def _process_interval(self, interval: str):
         interval_lower = interval.lower()
         match = re.match(
@@ -228,8 +226,10 @@ class ResampleQuery(Query):
             return f"DATE_TRUNC(dt, DAY) - MOD(DATE_DIFF(dt, DATE '1970-01-01', DAY), {number}) * INTERVAL 1 DAY", \
                 f"DATE_TRUNC(dt, DAY) - MOD(DATE_DIFF(dt, DATE '1970-01-01', DAY), {number}) * INTERVAL 1 DAY"
         elif unit == 'week':
-            return f"DATE_TRUNC(dt, WEEK) - MOD(DATE_DIFF(dt, DATE '1970-01-04', WEEK), {number}) * INTERVAL 7 DAY", \
-                f"DATE_TRUNC(dt, WEEK) - MOD(DATE_DIFF(dt, DATE '1970-01-04', WEEK), {number}) * INTERVAL 7 DAY"
+            return (
+                "DATE_TRUNC(DATE_SUB(dt, INTERVAL 6 DAY), WEEK) + INTERVAL 6 DAY",
+                "DATE_TRUNC(DATE_SUB(dt, INTERVAL 6 DAY), WEEK) + INTERVAL 6 DAY"
+            )
         elif unit == 'month':
             return f"DATE_TRUNC(dt, MONTH) - MOD(DATE_DIFF(dt, DATE '1970-01-01', MONTH), {number}) * INTERVAL 1 MONTH", \
                 f"DATE_TRUNC(dt, MONTH) - MOD(DATE_DIFF(dt, DATE '1970-01-01', MONTH), {number}) * INTERVAL 1 MONTH"
