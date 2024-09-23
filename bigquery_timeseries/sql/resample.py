@@ -224,8 +224,8 @@ class ResampleQuery(Query):
                 f"DATE_TRUNC(dt, DAY) - MOD(DATE_DIFF(dt, DATE '1970-01-01', DAY), {number}) * INTERVAL 1 DAY"
         elif unit == 'week':
             return (
-                "DATE_TRUNC(DATE_SUB(dt, INTERVAL EXTRACT(DAYOFWEEK FROM dt) - 1 DAY), DAY)",
-                "DATE_TRUNC(DATE_SUB(dt, INTERVAL EXTRACT(DAYOFWEEK FROM dt) - 1 DAY), DAY)"
+                "DATE_TRUNC(DATE_SUB(dt, INTERVAL MOD(EXTRACT(DAYOFWEEK FROM dt) + 6, 7) DAY), DAY)",
+                "DATE_TRUNC(DATE_SUB(dt, INTERVAL MOD(EXTRACT(DAYOFWEEK FROM dt) + 6, 7) DAY), DAY)"
             )
         elif unit == 'month':
             return f"DATE_TRUNC(dt, MONTH) - MOD(DATE_DIFF(dt, DATE '1970-01-01', MONTH), {number}) * INTERVAL 1 MONTH", \
