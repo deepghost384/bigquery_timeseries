@@ -36,20 +36,27 @@ auth.authenticate_user()
 
 ## 🚀 Usage
 
+### 🔧 Initializing BQTS Client
+
+To use the bigquery_timeseries library, first initialize the BQTS client:
+
+```python
+import bigquery_timeseries as bqts
+
+bqts_client = bqts.BQTS(
+    project_id="your_project_id",
+    dataset_id="your_dataset_id",
+    verbose=False  # Set to True for verbose logging
+)
+```
+
 ### 📊 Uploading Data
 
 Here's an example to upload OHLC data:
 
 ```python
-import bigquery_timeseries as bqts
 import pandas as pd
 import numpy as np
-
-# Initialize Uploader
-uploader = bqts.Uploader(
-    project_id="your_project_id",
-    dataset_id="your_dataset_id"
-)
 
 # Prepare example data
 df = pd.DataFrame(np.random.randn(5000, 4))
@@ -61,7 +68,7 @@ df['dt'] = pd.date_range('2022-01-01', periods=5000, freq='15T')
 df['partition_dt'] = df['dt'].dt.date.map(lambda x: x.replace(day=1))
 
 # Upload data via Google Cloud Storage
-uploader.upload(
+bqts_client.upload(
     table_name='example_table',
     df=df,
     gcs_bucket_name='your-bucket-name',
@@ -87,14 +94,6 @@ The method also includes cost estimation checks to ensure that the operations do
 Here are examples to query data:
 
 ```python
-import bigquery_timeseries as bqts
-
-# Initialize BQTS client
-bqts_client = bqts.BQTS(
-    project_id="your_project_id",
-    dataset_id="your_dataset_id"
-)
-
 # Standard query
 result = bqts_client.query(
     table_name='example_table',
@@ -132,7 +131,7 @@ Note: Query results will have 'dt' as the index, and 'symbol' will be included a
 
 ## 📝 Logging
 
-The library uses Loguru for logging. By default, logs are written to a file with a 500 MB rotation. You can enable verbose logging by setting `verbose=True` when initializing the `Uploader` or `BQTS` classes.
+The library uses Loguru for logging. By default, logs are written to a file with a 500 MB rotation. You can enable verbose logging by setting `verbose=True` when initializing the `BQTS` class.
 
 ## ⚠️ Disclaimer
 
