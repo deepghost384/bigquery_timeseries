@@ -1,6 +1,6 @@
 # 🚀 bigquery_timeseries
 
-A powerful custom library for seamlessly working with BigQuery timeseries data.
+A powerful custom library for seamlessly working with BigQuery timeseries data..
 
 ## 📦 Install
 
