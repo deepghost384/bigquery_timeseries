@@ -12,130 +12,164 @@ pip install git+https://github.com/deepghost384/bigquery_timeseries.git -U
 
 ### 🖥️ Using gcloud command-line tool
 
-For local machine or environments with gcloud CLI access:
+ローカル環境や gcloud CLI が導入されている環境では下記コマンドで認証します。
 
 ```bash
 gcloud auth application-default login
 ```
 
-This command opens a web browser for Google account login. After successful authentication, you can use the bigquery_timeseries library without additional steps in your Python code.
+認証に成功すると、Python コード内で特別な設定なしに本ライブラリを使用できます。
 
 ### 🧪 Using in Google Colab environment
 
-For Google Colab, authenticate as follows:
+Google Colab を使用する場合:
 
 ```python
 from google.colab import auth
 from google.cloud import bigquery
 
-# Authenticate in Colab environment
+# Colab での認証
 auth.authenticate_user()
 
-# Proceed with standard usage after authentication
+# 認証後は通常どおりライブラリを利用可能
 ```
 
 ## 🚀 Usage
 
 ### 🔧 Initializing BQTS Client
 
-To use the bigquery_timeseries library, first initialize the BQTS client:
-
 ```python
 import bigquery_timeseries as bqts
 
 bqts_client = bqts.BQTS(
-    project_id="your_project_id",
-    dataset_id="your_dataset_id"
+   project_id="your_project_id",
+   dataset_id="your_dataset_id"
 )
 ```
 
 ### 📊 Uploading Data
 
-Here's an example to upload OHLC data:
+OHLC データをアップロードする例:
 
 ```python
 import pandas as pd
 import numpy as np
 
-# Prepare example data
+# データのサンプルを作成
 df = pd.DataFrame(np.random.randn(5000, 4))
 df.columns = ['open', 'high', 'low', 'close']
 df['symbol'] = np.random.choice(['BTCUSDT', 'ETHUSDT', 'BNBUSDT'], 5000)
 df['dt'] = pd.date_range('2022-01-01', periods=5000, freq='15T')
 
-# Set partition_dt for month partitioning
+# テーブルの月間パーティション用に partition_dt を設定
 df['partition_dt'] = df['dt'].dt.date.map(lambda x: x.replace(day=1))
 
-# Upload data via Google Cloud Storage
+# Google Cloud Storage 経由でアップロード
 bqts_client.upload(
-    table_name='example_table',
-    df=df,
-    gcs_bucket_name='your-bucket-name',
-    keep_gcs_file=False,  # Set to True to keep the temporary file in GCS
-    max_cost=1.0
+   table_name='example_table',
+   df=df,
+   gcs_bucket_name='your-bucket-name',
+   keep_gcs_file=False,  # True にすると GCS 上の一時ファイルを保持
+   max_cost=1.0
 )
 ```
 
+
+
 ### 🔄 Upload Mode
 
-The `upload` method uses a smart implementation combining targeted deletion and append operations:
+`upload` メソッドは以下のステップで動作します:
 
-1. Identifies unique combinations of `partition_dt` and `symbol` in the new data.
-2. Constructs and executes a DELETE query to remove existing data for these specific combinations.
-3. Appends the new data to the table using BigQuery's `WRITE_APPEND` disposition.
+1. 新規データの中から `partition_dt` と `symbol` のユニークな組み合わせを抽出  
+2. 対応する既存データを一括削除 (`DELETE`)  
+3. 新規データを `WRITE_APPEND` で追加挿入  
 
-This approach allows for efficient updating of specific time periods and symbols without affecting other data in the table. It's particularly useful for scenarios where you need to update or replace data for certain date ranges and symbols while keeping the rest of the data intact.
+パーティション分割されているテーブルに対して、一部の期間・一部のシンボルだけを更新したいケースで役立ちます。また、実行コストが大きくなりすぎないよう、`max_cost` で上限を設定できます。
 
-The method also includes cost estimation checks to ensure that the operations don't exceed a specified cost threshold.
+
 
 ### 🔍 Querying Data
 
-Here are examples to query data:
+下記のようにデータを取得できます:
 
 ```python
-# Standard query
+# 通常のクエリ
 result = bqts_client.query(
-    table_name='example_table',
-    fields=['open', 'high', 'low', 'close', 'symbol'],
-    start_dt='2022-02-01 00:00:00',
-    end_dt='2022-02-05 23:59:59',
-    symbols=['BTCUSDT', 'ETHUSDT']
+   table_name='example_table',
+   fields=['open', 'high', 'low', 'close', 'symbol'],
+   start_dt='2022-02-01 00:00:00',
+   end_dt='2022-02-05 23:59:59',
+   symbols=['BTCUSDT', 'ETHUSDT']
 )
 print(result.head(), "\nShape:", result.shape)
 
-# Query to get all fields
+# すべてのカラムを取得
 result_all_fields = bqts_client.query(
-    table_name='example_table',
-    fields=['*'],
-    start_dt='2022-02-01 00:00:00',
-    end_dt='2022-02-05 23:59:59',
-    symbols=['BTCUSDT', 'ETHUSDT']
+   table_name='example_table',
+   fields=['*'],
+   start_dt='2022-02-01 00:00:00',
+   end_dt='2022-02-05 23:59:59',
+   symbols=['BTCUSDT', 'ETHUSDT']
 )
 print(result_all_fields.head(), "\nShape:", result_all_fields.shape)
 
-# Resampling query
+# リサンプリングクエリ
 resampled_result = bqts_client.resample_query(
-    table_name='example_table',
-    fields=['open', 'high', 'low', 'close'],
-    start_dt='2022-01-01 00:00:00',
-    end_dt='2022-01-31 23:59:59',
-    symbols=['BTCUSDT', 'ETHUSDT'],
-    interval='day',
-    ops=['first', 'max', 'min', 'last']
+   table_name='example_table',
+   fields=['open', 'high', 'low', 'close'],
+   start_dt='2022-01-01 00:00:00',
+   end_dt='2022-01-31 23:59:59',
+   symbols=['BTCUSDT', 'ETHUSDT'],
+   interval='day',
+   ops=['first', 'max', 'min', 'last']
 )
 print(resampled_result.head(), "\nShape:", resampled_result.shape)
 ```
 
-Note: Query results will have 'dt' as the index, and 'symbol' will be included as a regular column. The 'partition_dt' column is not included in the query results.
+クエリ結果には `dt` カラムがインデックスとして設定され、`symbol` がカラムとして含まれます。パーティションに使用する `partition_dt` は結果に含まれません。
+
+
+
+## 📝 Logging (Loguru の使用方法)
+
+本ライブラリでは [Loguru](https://github.com/Delgan/loguru) を用いたログ出力を行います。  
+ソースコードを見ると、`bigquery_timeseries/__init__.py` 内で `logger.remove()` が呼ばれているため、**デフォルトのログ出力先は削除**されています。  
+そのため、**ユーザーが任意の出力先（コンソールやファイルなど）を改めて設定**する必要があります。
+
+### 例: ログをファイルに出力する
+
+```python
+import bigquery_timeseries as bqts
+from loguru import logger
+
+# まずはデフォルトのハンドラを削除（bigquery_timeseries ではすでに remove 済）
+logger.remove()
+
+# ファイルにログを出力したい場合
+logger.add("myapp.log", level="DEBUG", rotation="10 MB")
+
+# コンソールにも INFO レベルで表示したい場合
+# logger.add(sys.stderr, level="INFO")
+
+# bigquery_timeseriesの出力は行わない場合
+# logger.disable("bigquery_timeseries")
+
+bqts_client = bqts.BQTS(
+    project_id="your_project_id",
+    dataset_id="your_dataset_id"
+)
+
+# 以降、ライブラリ呼び出しの際に、内部のログを含めて myapp.log に書き出されます
+df = ...
+bqts_client.upload(table_name="example_table", df=df, gcs_bucket_name="your-bucket")
+```
 
 ## ⚠️ Disclaimer
 
-This library allows for potential SQL injection. Please use it for your own purposes only and do not allow arbitrary requests to this library.
-
-## 🎉 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
+本ライブラリのクエリ機能は、SQL インジェクションが起きうる実装部分を含んでいます。  
+そのため、**「自分で用意したデータフレームやパラメータのみ」を扱う** ケースでのみ使用し、  
+第三者が任意の入力を行えるような用途での使用は控えてください。
 
 ## 📄 License
 
-This project is licensed under the MIT License.
+このプロジェクトは [MIT License](LICENSE) でライセンスされています。
