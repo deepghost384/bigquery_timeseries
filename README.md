@@ -80,7 +80,7 @@ bqts_client.upload(
 
 `upload` メソッドは以下のステップで動作します:
 
-1. 新規データの中から `partition_dt` と `symbol` のユニークな組み合わせを抽出  
+1. 新規データの中から `partition_dt` × `symbol` に該当する組み合わせを抽出  
 2. 対応する既存データを一括削除 (`DELETE`)  
 3. 新規データを `WRITE_APPEND` で追加挿入  
 
@@ -133,8 +133,8 @@ print(resampled_result.head(), "\nShape:", resampled_result.shape)
 ## 📝 Logging (Loguru の使用方法)
 
 本ライブラリでは [Loguru](https://github.com/Delgan/loguru) を用いたログ出力を行います。  
-ソースコードを見ると、`bigquery_timeseries/__init__.py` 内で `logger.remove()` が呼ばれているため、**デフォルトのログ出力先は削除**されています。  
-そのため、**ユーザーが任意の出力先（コンソールやファイルなど）を改めて設定**する必要があります。
+ソースコードを見ると、`bigquery_timeseries/__init__.py` 内で `logger.disable("bigquery_timeseries")` が呼ばれているため、**デフォルトのログ出力は無効化**されています。  
+そのため、ログが見たい場合は、**ユーザーが`logger.enable("bigquery_timeseries")`を改めて設定**する必要があります。
 
 ### 例: ログをファイルに出力する
 
@@ -142,26 +142,14 @@ print(resampled_result.head(), "\nShape:", resampled_result.shape)
 import bigquery_timeseries as bqts
 from loguru import logger
 
-# まずはデフォルトのハンドラを削除（bigquery_timeseries ではすでに remove 済）
-logger.remove()
+# bigquery_timeseriesの出力を行う場合
+# logger.enable("bigquery_timeseries")
 
-# ファイルにログを出力したい場合
-logger.add("myapp.log", level="DEBUG", rotation="10 MB")
-
-# コンソールにも INFO レベルで表示したい場合
-# logger.add(sys.stderr, level="INFO")
-
-# bigquery_timeseriesの出力は行わない場合
-# logger.disable("bigquery_timeseries")
-
+logger.info("Upload Start")
 bqts_client = bqts.BQTS(
     project_id="your_project_id",
     dataset_id="your_dataset_id"
 )
-
-# 以降、ライブラリ呼び出しの際に、内部のログを含めて myapp.log に書き出されます
-df = ...
-bqts_client.upload(table_name="example_table", df=df, gcs_bucket_name="your-bucket")
 ```
 
 ## ⚠️ Disclaimer

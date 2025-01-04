@@ -20,7 +20,7 @@ class Uploader:
         self.bq_client = bigquery.Client(project=project_id)
         self.storage_client = storage.Client(project=project_id)
 
-    @logger.catch
+    # @logger.catch
     def log(self, message: str, level: str = "DEBUG"):
         getattr(logger, level.lower())(message)
 
@@ -31,14 +31,14 @@ class Uploader:
         google_exceptions.InternalServerError,
         google_exceptions.GatewayTimeout
     ))
-    @logger.catch
+    # @logger.catch
     def upload_to_gcs_with_retry(self, bucket, blob, buffer):
         logger.debug(f"Attempting to upload blob: {blob.name}")
         blob.upload_from_file(
             buffer, content_type='application/gzip', timeout=300)
         logger.debug(f"Successfully uploaded blob: {blob.name}")
 
-    @logger.catch
+    # @logger.catch
     def upload_to_gcs(self, gcs_bucket_name: str, df: pd.DataFrame) -> str:
         logger.debug(f"Starting upload to GCS bucket: {gcs_bucket_name}")
         logger.debug(f"DataFrame shape: {df.shape}")
@@ -72,7 +72,7 @@ class Uploader:
 
         return gcs_uri
 
-    @logger.catch
+    # @logger.catch
     def get_current_schema(self, table_id):
         try:
             table = self.bq_client.get_table(table_id)
@@ -80,7 +80,7 @@ class Uploader:
         except google_exceptions.NotFound:
             return None
 
-    @logger.catch
+    # @logger.catch
     def compare_schemas(self, current_schema, new_schema):
         if current_schema is None:
             return False, new_schema
@@ -98,14 +98,14 @@ class Uploader:
 
         return False, current_schema
 
-    @logger.catch
+    # @logger.catch
     def update_table_schema(self, table_id, new_schema):
         table = self.bq_client.get_table(table_id)
         table.schema = new_schema
         self.bq_client.update_table(table, ['schema'])
         logger.info(f"Updated schema for table {table_id}")
 
-    @logger.catch
+    # @logger.catch
     def upload(self, table_name: str, df: pd.DataFrame, gcs_bucket_name: str, keep_gcs_file: bool = False, max_cost: float = 1.0):
         logger.info(f"Starting upload process for table: {table_name}")
         logger.debug(f"Input DataFrame shape: {df.shape}")
@@ -227,11 +227,10 @@ class Uploader:
             logger.info("BigQuery load complete.")
             logger.info(
                 f"Load job completed. Loaded {load_job.output_rows} rows.")
-        except google_exceptions.BadRequest as e:
-            logger.error("BigQuery load failed.")
-            logger.exception(f"Load job failed with error: {e}")
-            for error in load_job.errors:
-                logger.error(f"Error details: {error}")
+        except Exception as e:
+            logger.error("BigQuery load failed (unexpected error).")
+            logger.exception(f"Unexpected error: {e}")
+            # 必要に応じて load_job.errors も確認
             raise
 
         if not keep_gcs_file:
@@ -264,7 +263,7 @@ class Uploader:
 
         logger.info("Upload process completed")
 
-    @logger.catch
+    # @logger.catch
     def check_query_cost(self, query: str, max_cost: float = 1.0) -> None:
         job_config = bigquery.QueryJobConfig(
             dry_run=True, use_query_cache=False)

@@ -8,7 +8,7 @@ import pandas as pd
 from google.cloud import bigquery
 from tqdm import tqdm
 
-logger.remove()
+logger.disable("bigquery_timeseries")
 
 class BQTS:
     def __init__(self, project_id: str, dataset_id: str):
