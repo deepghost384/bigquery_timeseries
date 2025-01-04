@@ -45,8 +45,7 @@ import bigquery_timeseries as bqts
 
 bqts_client = bqts.BQTS(
     project_id="your_project_id",
-    dataset_id="your_dataset_id",
-    verbose=False  # Set to True for verbose logging
+    dataset_id="your_dataset_id"
 )
 ```
 
@@ -128,10 +127,6 @@ print(resampled_result.head(), "\nShape:", resampled_result.shape)
 ```
 
 Note: Query results will have 'dt' as the index, and 'symbol' will be included as a regular column. The 'partition_dt' column is not included in the query results.
-
-## 📝 Logging
-
-The library uses Loguru for logging. By default, logs are written to a file with a 500 MB rotation. You can enable verbose logging by setting `verbose=True` when initializing the `BQTS` class.
 
 ## ⚠️ Disclaimer
 

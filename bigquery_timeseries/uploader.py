@@ -13,29 +13,12 @@ from google.api_core.exceptions import BadRequest
 from loguru import logger
 from google.api_core import retry
 
-# Configure Loguru
-logger.configure(
-    handlers=[
-        {"sink": "file_{time}.log", "rotation": "500 MB", "level": "DEBUG"},
-    ]
-)
-
-# Disable logger for the library
-logger.disable("bqts")
-
-
 class Uploader:
-    def __init__(self, project_id: str, dataset_id: str, verbose: bool = False):
+    def __init__(self, project_id: str, dataset_id: str):
         self.project_id = project_id
         self.dataset_id = dataset_id
         self.bq_client = bigquery.Client(project=project_id)
         self.storage_client = storage.Client(project=project_id)
-        self.verbose = verbose
-
-        if self.verbose:
-            logger.enable("bqts")
-        else:
-            logger.disable("bqts")
 
     @logger.catch
     def log(self, message: str, level: str = "DEBUG"):
