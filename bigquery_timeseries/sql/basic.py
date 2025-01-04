@@ -1,4 +1,4 @@
-# basic.py
+# bigquery_timeseries/sql/basic.py
 
 from typing import Callable, Optional, List, Union, Dict, Any
 import pandas as pd

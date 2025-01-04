@@ -1,4 +1,4 @@
-# resample.py
+# bigquery_timeseries/sql/resample.py
 
 from dataclasses import dataclass
 from typing import List, Optional, Any

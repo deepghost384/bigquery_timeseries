@@ -1,3 +1,5 @@
+# uploader.py
+
 from google.auth.transport.requests import AuthorizedSession
 from google.resumable_media import requests, common
 import io
@@ -31,9 +33,9 @@ class Uploader:
         self.verbose = verbose
 
         if self.verbose:
-            logger.enable("bigquery_timeseries")
+            logger.enable("bqts")
         else:
-            logger.disable("bigquery_timeseries")
+            logger.disable("bqts")
 
     @logger.catch
     def log(self, message: str, level: str = "DEBUG"):
