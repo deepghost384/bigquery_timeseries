@@ -75,15 +75,17 @@ class Uploader:
         except google_exceptions.NotFound:
             return None
 
+
     def compare_schemas(self, current_schema, new_schema):
         """
-        current_schema: list of bigquery.SchemaField
+        current_schema: list of bigquery.SchemaField  (or None)
         new_schema: list of dict (e.g. [{'name': 'col', 'type': 'STRING', 'mode': 'NULLABLE'}, ...])
         """
         if current_schema is None:
+            # テーブルが存在しない場合は常に新スキーマを適用
             return True, new_schema
 
-        # SchemaField -> dict に変換して比較用の辞書を作る
+        # current_schema (SchemaField) -> dict に変換して比較用の辞書を作る
         current_fields = {field.name: field for field in current_schema}
         new_fields = {field['name']: field for field in new_schema}
 
@@ -94,11 +96,13 @@ class Uploader:
         # カラムの型の差分をチェック
         for name, new_field in new_fields.items():
             current_field = current_fields[name]
+            # 型が違えば変更あり
             if current_field.field_type.upper() != new_field['type'].upper():
                 return True, new_schema
 
-        # 変更なし
-        return False, current_schema
+        # 差分なしの場合も new_schema (list[dict]) を返す
+        return False, new_schema
+
 
     def update_table_schema(self, table_id, new_schema):
         """
