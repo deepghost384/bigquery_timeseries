@@ -3,6 +3,7 @@
 from typing import Callable, Optional, List, Union, Dict, Any
 import pandas as pd
 from google.cloud import bigquery
+import pandas_gbq
 from bigquery_timeseries.dt import (
     to_quarter_start_dt,
     to_month_start_dt,
@@ -130,6 +131,8 @@ class Query:
 
             df = pd.read_gbq(stmt, project_id=self.project_id,
                              use_bqstorage_api=True)
+            df = pandas_gbq.read_gbq(
+                query, project_id=self.project_id, use_bqstorage_api=True)
 
             # dt カラムが存在する場合、datetime に変換
             if 'dt' in df.columns:
