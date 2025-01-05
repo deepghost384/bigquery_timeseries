@@ -8,10 +8,11 @@ import uuid
 import csv
 import pandas as pd
 from google.cloud import bigquery, storage, exceptions as google_exceptions
-import pandas_gbq
+# import pandas_gbq  # 不要になった場合は削除してOK
 from google.api_core.exceptions import BadRequest
 from loguru import logger
 from google.api_core import retry
+
 
 class Uploader:
     def __init__(self, project_id: str, dataset_id: str):
@@ -20,7 +21,6 @@ class Uploader:
         self.bq_client = bigquery.Client(project=project_id)
         self.storage_client = storage.Client(project=project_id)
 
-    # @logger.catch
     def log(self, message: str, level: str = "DEBUG"):
         getattr(logger, level.lower())(message)
 
@@ -31,14 +31,12 @@ class Uploader:
         google_exceptions.InternalServerError,
         google_exceptions.GatewayTimeout
     ))
-    # @logger.catch
     def upload_to_gcs_with_retry(self, bucket, blob, buffer):
         logger.debug(f"Attempting to upload blob: {blob.name}")
         blob.upload_from_file(
             buffer, content_type='application/gzip', timeout=300)
         logger.debug(f"Successfully uploaded blob: {blob.name}")
 
-    # @logger.catch
     def upload_to_gcs(self, gcs_bucket_name: str, df: pd.DataFrame) -> str:
         logger.debug(f"Starting upload to GCS bucket: {gcs_bucket_name}")
         logger.debug(f"DataFrame shape: {df.shape}")
@@ -51,14 +49,12 @@ class Uploader:
 
         buffer = io.BytesIO()
 
-        # Compress data
         logger.debug("Compressing data")
         with gzip.GzipFile(fileobj=buffer, mode='w') as f:
             df.to_csv(f, index=False, quoting=csv.QUOTE_NONNUMERIC)
 
         buffer.seek(0)
 
-        # Upload to GCS
         try:
             logger.debug("Attempting to upload to GCS")
             self.upload_to_gcs_with_retry(bucket, blob, buffer)
@@ -72,7 +68,6 @@ class Uploader:
 
         return gcs_uri
 
-    # @logger.catch
     def get_current_schema(self, table_id):
         try:
             table = self.bq_client.get_table(table_id)
@@ -80,32 +75,79 @@ class Uploader:
         except google_exceptions.NotFound:
             return None
 
-    # @logger.catch
     def compare_schemas(self, current_schema, new_schema):
+        """
+        current_schema: list of bigquery.SchemaField
+        new_schema: list of dict (e.g. [{'name': 'col', 'type': 'STRING', 'mode': 'NULLABLE'}, ...])
+        """
         if current_schema is None:
-            return False, new_schema
+            return True, new_schema
 
+        # SchemaField -> dict に変換して比較用の辞書を作る
         current_fields = {field.name: field for field in current_schema}
         new_fields = {field['name']: field for field in new_schema}
 
+        # カラム名の差分をチェック
         if set(current_fields.keys()) != set(new_fields.keys()):
             return True, new_schema
 
+        # カラムの型の差分をチェック
         for name, new_field in new_fields.items():
             current_field = current_fields[name]
-            if current_field.field_type != new_field['type']:
+            if current_field.field_type.upper() != new_field['type'].upper():
                 return True, new_schema
 
+        # 変更なし
         return False, current_schema
 
-    # @logger.catch
     def update_table_schema(self, table_id, new_schema):
+        """
+        new_schema: list of dict
+        """
         table = self.bq_client.get_table(table_id)
-        table.schema = new_schema
+        # dict -> SchemaField に変換
+        bq_schema_fields = []
+        for f in new_schema:
+            bq_schema_fields.append(
+                bigquery.SchemaField(
+                    name=f['name'],
+                    field_type=f['type'],
+                    mode=f.get('mode', 'NULLABLE')
+                )
+            )
+        table.schema = bq_schema_fields
         self.bq_client.update_table(table, ['schema'])
         logger.info(f"Updated schema for table {table_id}")
 
-    # @logger.catch
+    def infer_bq_schema_from_df(self, df: pd.DataFrame) -> list[dict]:
+        """
+        pandas_gbq.schema.generate_bq_schema(df)['fields'] が使えない場合の代替実装。
+        DataFrame 各列の dtype を判別し、BigQuery 互換のスキーマを返す。
+        戻り値の形式は [{'name': 'col', 'type': 'STRING', 'mode': 'NULLABLE'}, ...] のリスト。
+        """
+        schema_fields = []
+        for col, dtype in df.dtypes.items():
+            # デフォルトは STRING で
+            bq_type = 'STRING'
+
+            if pd.api.types.is_integer_dtype(dtype):
+                bq_type = 'INTEGER'
+            elif pd.api.types.is_float_dtype(dtype):
+                bq_type = 'FLOAT'
+            elif pd.api.types.is_bool_dtype(dtype):
+                bq_type = 'BOOL'
+            elif pd.api.types.is_datetime64_any_dtype(dtype):
+                # 時刻型は標準で DATETIME or TIMESTAMP 等
+                bq_type = 'TIMESTAMP'
+
+            schema_fields.append({
+                'name': col,
+                'type': bq_type,
+                'mode': 'NULLABLE'
+            })
+
+        return schema_fields
+
     def upload(self, table_name: str, df: pd.DataFrame, gcs_bucket_name: str, keep_gcs_file: bool = False, max_cost: float = 1.0):
         logger.info(f"Starting upload process for table: {table_name}")
         logger.debug(f"Input DataFrame shape: {df.shape}")
@@ -114,21 +156,23 @@ class Uploader:
 
         # Ensure dt and partition_dt are in the correct format
         df['dt'] = pd.to_datetime(df['dt']).dt.strftime('%Y-%m-%d %H:%M:%S')
-        # df['partition_dt'] = pd.to_datetime(df['partition_dt']).dt.strftime('%Y-%m-%d')
-        
+
         # 1) partition_dt を Timestamp に変換
-        df['partition_dt'] = pd.to_datetime(df['partition_dt'], errors='coerce')
+        df['partition_dt'] = pd.to_datetime(
+            df['partition_dt'], errors='coerce')
 
         # 2) NaT や 不正値があればエラー
         if df['partition_dt'].isna().any():
-            # ログ出力 & エラー
-            logger.error("Cannot convert some partition_dt values to a valid date.")
-            raise ValueError("Some partition_dt values could not be converted.")
+            logger.error(
+                "Cannot convert some partition_dt values to a valid date.")
+            raise ValueError(
+                "Some partition_dt values could not be converted.")
 
-        # 3) 月初チェック (day != 1 の行があればエラー)
+        # 3) 月初チェック
         invalid_rows = df[df['partition_dt'].dt.day != 1]
         if not invalid_rows.empty:
-            logger.error("Some partition_dt values are not the 1st day of the month.")
+            logger.error(
+                "Some partition_dt values are not the 1st day of the month.")
             raise ValueError("partition_dt must be 1st day of each month.")
 
         # 4) スキーマ上、BigQueryに投入する時にDATEとして扱うために文字列に再変換
@@ -138,7 +182,11 @@ class Uploader:
         logger.debug(
             f"DataFrame dtypes after initial processing:\n{df.dtypes}")
 
-        schema = pandas_gbq.schema.generate_bq_schema(df)['fields']
+        # --- ここを修正 ---
+        # pandas_gbq.schema.generate_bq_schema(df) の代わりに、自前で schema を推定する
+        schema = self.infer_bq_schema_from_df(df)
+
+        # `dt` と `partition_dt` の型を上書き
         for field in schema:
             if field['name'] == 'partition_dt':
                 field['type'] = 'DATE'
@@ -146,6 +194,7 @@ class Uploader:
                 field['type'] = 'DATETIME'
 
         logger.debug(f"Generated schema: {schema}")
+        # --- 修正ここまで ---
 
         table_id = f"{self.project_id}.{self.dataset_id}.{table_name}"
         current_schema = self.get_current_schema(table_id)
@@ -153,9 +202,19 @@ class Uploader:
         schema_changed, final_schema = self.compare_schemas(
             current_schema, schema)
 
+        # テーブルがない場合は新規作成
         if current_schema is None:
             logger.info(f"Table {table_id} not found. Creating a new table.")
-            table = bigquery.Table(table_id, schema=final_schema)
+            # dict -> SchemaField に変換
+            bq_schema_fields = [
+                bigquery.SchemaField(
+                    name=f['name'],
+                    field_type=f['type'],
+                    mode=f.get('mode', 'NULLABLE')
+                )
+                for f in final_schema
+            ]
+            table = bigquery.Table(table_id, schema=bq_schema_fields)
             table.time_partitioning = bigquery.TimePartitioning(
                 type_=bigquery.TimePartitioningType.MONTH,
                 field="partition_dt"
@@ -180,7 +239,8 @@ class Uploader:
 
         if delete_conditions:
             partition_filter = " OR ".join(
-                [f"partition_dt = DATE('{date}')" for date in partition_dates])
+                [f"partition_dt = DATE('{date}')" for date in partition_dates]
+            )
             delete_query = f"""
             DELETE FROM `{self.project_id}.{self.dataset_id}.{table_name}`
             WHERE partition_dt IN (
@@ -196,7 +256,7 @@ class Uploader:
                 delete_job = self.bq_client.query(delete_query)
                 delete_job.result()
                 logger.info(
-                    f"Deleted data for specified partition_dt and symbol combinations")
+                    "Deleted data for specified partition_dt and symbol combinations")
                 logger.info(
                     f"Rows affected: {delete_job.num_dml_affected_rows}")
             except google_exceptions.NotFound:
@@ -215,8 +275,21 @@ class Uploader:
         logger.info("GCS upload complete. Starting BigQuery load...")
 
         # Load data from GCS to BigQuery
+        # final_schema は [{"name":..., "type":..., "mode":...}, ...] のリスト
+        # bigquery.LoadJobConfig に渡す際は SchemaField に変換するか、
+        # autodetect=True にするかどちらかで対応可能。
+        # ここでは time_partitioning や clustering も指定しているので、
+        # schema は渡さず autodetect=True にしてもよいが、変更が必要なら明示的に SchemaField を渡す。
+        bq_schema_fields = [
+            bigquery.SchemaField(
+                name=f['name'],
+                field_type=f['type'],
+                mode=f.get('mode', 'NULLABLE')
+            )
+            for f in final_schema
+        ]
         job_config = bigquery.LoadJobConfig(
-            schema=final_schema,
+            schema=bq_schema_fields,
             write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
             time_partitioning=bigquery.TimePartitioning(
                 type_=bigquery.TimePartitioningType.MONTH,
@@ -228,7 +301,7 @@ class Uploader:
             ignore_unknown_values=False,
             max_bad_records=0,
             skip_leading_rows=1,
-            autodetect=True,
+            autodetect=False,  # スキーマを渡している場合は False に
         )
 
         logger.debug(f"Starting BigQuery load job from GCS: {gcs_uri}")
@@ -240,14 +313,13 @@ class Uploader:
         )
 
         try:
-            load_job.result()  # Wait for the job to complete
+            load_job.result()
             logger.info("BigQuery load complete.")
             logger.info(
                 f"Load job completed. Loaded {load_job.output_rows} rows.")
         except Exception as e:
             logger.error("BigQuery load failed (unexpected error).")
             logger.exception(f"Unexpected error: {e}")
-            # 必要に応じて load_job.errors も確認
             raise
 
         if not keep_gcs_file:
@@ -280,10 +352,10 @@ class Uploader:
 
         logger.info("Upload process completed")
 
-    # @logger.catch
     def check_query_cost(self, query: str, max_cost: float = 1.0) -> None:
         job_config = bigquery.QueryJobConfig(
-            dry_run=True, use_query_cache=False)
+            dry_run=True, use_query_cache=False
+        )
         query_job = self.bq_client.query(query, job_config=job_config)
 
         bytes_processed = query_job.total_bytes_processed
@@ -294,4 +366,5 @@ class Uploader:
 
         if estimated_cost > max_cost:
             raise ValueError(
-                f"Estimated query cost (${estimated_cost:.6f}) exceeds the maximum allowed cost (${max_cost:.2f})")
+                f"Estimated query cost (${estimated_cost:.6f}) exceeds the maximum allowed cost (${max_cost:.2f})"
+            )
