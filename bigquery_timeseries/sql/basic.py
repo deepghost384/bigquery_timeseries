@@ -129,10 +129,8 @@ class Query:
                 raise ValueError(
                     f"Estimated cost (${estimated_cost:.4f}) exceeds the maximum allowed cost (${max_cost:.2f}). Query execution cancelled.")
 
-            df = pd.read_gbq(stmt, project_id=self.project_id,
-                             use_bqstorage_api=True)
             df = pandas_gbq.read_gbq(
-                query, project_id=self.project_id, use_bqstorage_api=True)
+                stmt, project_id=self.project_id, use_bqstorage_api=True)
 
             # dt カラムが存在する場合、datetime に変換
             if 'dt' in df.columns:
