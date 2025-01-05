@@ -114,24 +114,25 @@ class Uploader:
 
         # Ensure dt and partition_dt are in the correct format
         df['dt'] = pd.to_datetime(df['dt']).dt.strftime('%Y-%m-%d %H:%M:%S')
+        df['partition_dt'] = pd.to_datetime(df['partition_dt']).dt.strftime('%Y-%m-%d')
         
-        # 1) partition_dt を Timestamp に変換
-        df['partition_dt'] = pd.to_datetime(df['partition_dt'], errors='coerce')
+        # # 1) partition_dt を Timestamp に変換
+        # df['partition_dt'] = pd.to_datetime(df['partition_dt'], errors='coerce')
 
-        # 2) NaT や 不正値があればエラー
-        if df['partition_dt'].isna().any():
-            # ログ出力 & エラー
-            logger.error("Cannot convert some partition_dt values to a valid date.")
-            raise ValueError("Some partition_dt values could not be converted.")
+        # # 2) NaT や 不正値があればエラー
+        # if df['partition_dt'].isna().any():
+        #     # ログ出力 & エラー
+        #     logger.error("Cannot convert some partition_dt values to a valid date.")
+        #     raise ValueError("Some partition_dt values could not be converted.")
 
-        # 3) 月初チェック (day != 1 の行があればエラー)
-        invalid_rows = df[df['partition_dt'].dt.day != 1]
-        if not invalid_rows.empty:
-            logger.error("Some partition_dt values are not the 1st day of the month.")
-            raise ValueError("partition_dt must be 1st day of each month.")
+        # # 3) 月初チェック (day != 1 の行があればエラー)
+        # invalid_rows = df[df['partition_dt'].dt.day != 1]
+        # if not invalid_rows.empty:
+        #     logger.error("Some partition_dt values are not the 1st day of the month.")
+        #     raise ValueError("partition_dt must be 1st day of each month.")
 
-        # 4) スキーマ上、BigQueryに投入する時にDATEとして扱うために文字列に再変換
-        df['partition_dt'] = df['partition_dt'].dt.strftime('%Y-%m-%d')
+        # # 4) スキーマ上、BigQueryに投入する時にDATEとして扱うために文字列に再変換
+        # df['partition_dt'] = df['partition_dt'].dt.strftime('%Y-%m-%d')
 
         logger.debug(f"DataFrame after initial processing:\n{df.head()}")
         logger.debug(
