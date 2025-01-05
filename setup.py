@@ -17,7 +17,7 @@ setup(
         'pyarrow>=10.0.1',
         'google-cloud-bigquery>=3.4.1',
         'db-dtypes>=1.0.5',
-        'pandas-gbq>=0.19.1',
+        'pandas-gbq==0.14.1',
         'loguru>=0.7.0',
         'google-cloud-bigquery-storage>=2.26.0'
     ],
