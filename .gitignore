@@ -159,4 +159,19 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-test/
+# Test directory (if not versioning tests)
+# test/
+
+# Environment variables file (contains sensitive information)
+.env
+.env.local
+.env.*.local
+
+# VS Code settings
+.vscode/
+
+# Windows specific
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
