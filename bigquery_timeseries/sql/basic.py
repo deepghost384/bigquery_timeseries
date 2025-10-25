@@ -72,14 +72,16 @@ class Query:
         end_dt: Optional[str] = None,
         partition_key: str = "partition_dt",
         partition_interval: str = "quarterly",
-        max_cost: float = 1.0  # 新しいパラメータ: 最大許容コスト（デフォルト1ドル）
+        max_cost: float = 1.0
     ) -> pd.DataFrame:
         try:
-            # Ensure correct datetime format
+            # 日付の正規化を追加
+            from bigquery_timeseries.dt import normalize_datetime
+            
             if start_dt is not None:
-                start_dt = pd.Timestamp(start_dt).strftime('%Y-%m-%d %H:%M:%S')
+                start_dt = normalize_datetime(start_dt)
             if end_dt is not None:
-                end_dt = pd.Timestamp(end_dt).strftime('%Y-%m-%d %H:%M:%S')
+                end_dt = normalize_datetime(end_dt)
 
             where = to_where(
                 start_dt=start_dt,
@@ -106,49 +108,40 @@ class Query:
                 fields = [f for f in fields if f != partition_key]
                 stmt = f"SELECT {','.join(fields)} FROM {table_id}"
             else:
-                raise ValueError(
-                    "Fields must be a string or a list of strings")
+                raise ValueError("Fields must be a string or a list of strings")
 
             if where:
                 condition = " AND ".join(where)
                 stmt += f" WHERE {condition}"
 
             # コスト見積もり
-            job_config = bigquery.QueryJobConfig(
-                dry_run=True, use_query_cache=False)
-            dry_run_query_job = self.bq_client.query(
-                stmt, job_config=job_config)
+            job_config = bigquery.QueryJobConfig(dry_run=True, use_query_cache=False)
+            dry_run_query_job = self.bq_client.query(stmt, job_config=job_config)
             bytes_processed = dry_run_query_job.total_bytes_processed
-            estimated_cost = bytes_processed * 5 / 1e12  # $5 per TB
+            estimated_cost = bytes_processed * 5 / 1e12
 
-            print(
-                f"This query will process approximately {bytes_processed / (1024 ** 3):.2f} GB of data.")
+            print(f"This query will process approximately {bytes_processed / (1024 ** 3):.2f} GB of data.")
             print(f"The estimated cost is ${estimated_cost:.4f}.")
 
             if estimated_cost > max_cost:
                 raise ValueError(
                     f"Estimated cost (${estimated_cost:.4f}) exceeds the maximum allowed cost (${max_cost:.2f}). Query execution cancelled.")
 
-            df = pandas_gbq.read_gbq(
-                stmt, project_id=self.project_id, use_bqstorage_api=True)
+            df = pandas_gbq.read_gbq(stmt, project_id=self.project_id, use_bqstorage_api=True)
 
-            # dt カラムが存在する場合、datetime に変換
             if 'dt' in df.columns:
                 df["dt"] = pd.to_datetime(df["dt"])
 
-            # dt カラムが存在する場合、dt をインデックスとして設定
             if 'dt' in df.columns:
                 result = df.set_index("dt").sort_index()
             else:
                 result = df
 
-            # 重複列を削除
             if 'symbol_1' in result.columns:
                 result = result.drop(columns=['symbol_1'])
             if 'dt_1' in result.columns:
                 result = result.drop(columns=['dt_1'])
 
-            # partition_dt カラムが残っている場合は削除
             if partition_key in result.columns:
                 result = result.drop(columns=[partition_key])
 

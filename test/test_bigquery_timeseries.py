@@ -8,6 +8,7 @@ import numpy as np
 import os
 from datetime import datetime, timedelta
 import bigquery_timeseries as bqts
+from bigquery_timeseries.dt import normalize_datetime
 
 
 # 環境変数から設定を読み込む
@@ -400,6 +401,81 @@ class TestBQTSDateUtils:
         assert intervals[1] == ('2024-02-01', '2024-02-29')
         assert intervals[2] == ('2024-03-01', '2024-03-10')
 
+class TestNormalizeDatetime:
+    """日付正規化関数のテスト"""
+    
+    def test_normalize_valid_date(self):
+        """有効な日付はそのまま返す"""
+        result = normalize_datetime('2024-01-15 10:30:00')
+        assert result == '2024-01-15 10:30:00'
+        
+        result = normalize_datetime('2024-12-31')
+        assert result == '2024-12-31 00:00:00'
+    
+    def test_normalize_invalid_september_31(self):
+        """9月31日 -> 9月30日に修正"""
+        result = normalize_datetime('2025-09-31')
+        assert result == '2025-09-30 00:00:00'
+        
+        result = normalize_datetime('2025-09-31 23:59:59')
+        assert result == '2025-09-30 23:59:59'
+    
+    def test_normalize_invalid_april_31(self):
+        """4月31日 -> 4月30日に修正"""
+        result = normalize_datetime('2025-04-31')
+        assert result == '2025-04-30 00:00:00'
+    
+    def test_normalize_invalid_february_30_normal_year(self):
+        """平年の2月30日 -> 2月28日に修正"""
+        result = normalize_datetime('2025-02-30')
+        assert result == '2025-02-28 00:00:00'
+        
+        result = normalize_datetime('2025-02-29')
+        assert result == '2025-02-28 00:00:00'
+    
+    def test_normalize_invalid_february_30_leap_year(self):
+        """閏年の2月30日 -> 2月29日に修正"""
+        result = normalize_datetime('2024-02-30')
+        assert result == '2024-02-29 00:00:00'
+    
+    def test_normalize_february_29_leap_year(self):
+        """閏年の2月29日は有効"""
+        result = normalize_datetime('2024-02-29')
+        assert result == '2024-02-29 00:00:00'
+    
+    def test_normalize_invalid_november_31(self):
+        """11月31日 -> 11月30日に修正"""
+        result = normalize_datetime('2025-11-31')
+        assert result == '2025-11-30 00:00:00'
+    
+    def test_normalize_with_time(self):
+        """時刻付きの無効な日付も正しく修正"""
+        result = normalize_datetime('2025-09-31 14:30:45')
+        assert result == '2025-09-30 14:30:45'
+    
+    def test_normalize_invalid_month(self):
+        """無効な月はエラー"""
+        with pytest.raises(ValueError, match="Invalid month"):
+            normalize_datetime('2025-13-01')
+        
+        with pytest.raises(ValueError, match="Invalid month"):
+            normalize_datetime('2025-00-01')
+    
+    def test_normalize_various_31st_months(self):
+        """31日まである月は正常に処理"""
+        # 31日まである月: 1, 3, 5, 7, 8, 10, 12
+        valid_months = [1, 3, 5, 7, 8, 10, 12]
+        for month in valid_months:
+            result = normalize_datetime(f'2025-{month:02d}-31')
+            assert result == f'2025-{month:02d}-31 00:00:00'
+    
+    def test_normalize_30_day_months(self):
+        """30日までの月で31日を指定すると30日に修正"""
+        # 30日までの月: 4, 6, 9, 11
+        thirty_day_months = [4, 6, 9, 11]
+        for month in thirty_day_months:
+            result = normalize_datetime(f'2025-{month:02d}-31')
+            assert result == f'2025-{month:02d}-30 00:00:00'
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])
